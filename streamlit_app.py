@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 
 # Pengaturan sidebar
 st.sidebar.title("Menu")
