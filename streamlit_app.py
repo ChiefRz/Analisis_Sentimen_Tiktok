@@ -4,14 +4,13 @@ import pandas as pd
 # Sidebar Navigation
 st.sidebar.title("Menu")
 menu_options = ["Upload Data", "Preprocessing Data", "Hasil Analisis"]
-choice = st.sidebar.radio(menu_options)
+choice = st.sidebar.radio("Select an option", menu_options)
 
 # Main title
 st.title("Pick your file here:")
 
 # Main content based on selected option
 if choice == "Upload Data":
-    st.title("Upload Data")
     st.write("Pick your file here:")
     uploaded_file = st.file_uploader("Select your files here:", type=['csv', 'xlsx'])
     if uploaded_file is not None:
@@ -19,7 +18,6 @@ if choice == "Upload Data":
         st.success("File uploaded successfully!")
         
 elif choice == "Preprocessing Data":
-    st.title("Preprocessing Data")
     st.write("Select a file to process:")
     uploaded_file = st.file_uploader("Select your files here:", type=['csv', 'xlsx'])
     if uploaded_file is not None:
