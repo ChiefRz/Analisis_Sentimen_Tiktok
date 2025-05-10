@@ -6,9 +6,6 @@ st.sidebar.title("Menu")
 menu_options = ["Upload Data", "Preprocessing Data", "Hasil Analisis"]
 choice = st.sidebar.radio("Select an option", menu_options)
 
-# Main title
-st.title("Pick your file here:")
-
 # Main content based on selected option
 if choice == "Upload Data":
     uploaded_file = st.file_uploader("Upload your files here:", type=['csv', 'xlsx'])
