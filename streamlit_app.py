@@ -3,7 +3,7 @@ import pandas as pd
 
 # Sidebar Navigation
 st.sidebar.title("Menu")
-menu_options = ["Upload Data", "Preprocessing Data"]
+menu_options = ["Upload Data", "Preprocessing Data", "Hasil Analisis"]
 choice = st.sidebar.radio("Select an option", menu_options)
 
 # Main title
