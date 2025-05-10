@@ -8,10 +8,10 @@ st.sidebar.write("Preprocessing Data")
 st.sidebar.write("Hasil Analisis")
 
 # Judul utama
-st.title("Upload your file here:")
+st.title("Pick your file here:")
 
 # Upload file
-uploaded_file = st.file_uploader("Drag and drop file here", type=['csv', 'xlsx', 'txt'], label_visibility="collapsed")
+uploaded_file = st.file_uploader("Select your files here:", type=['csv', 'xlsx', 'txt'], label_visibility="collapsed")
 
 # Tombol Process
 if st.button("Process"):
@@ -28,3 +28,7 @@ if st.button("Process"):
         st.dataframe(data)
     else:
         st.warning("Silakan unggah file terlebih dahulu.")
+
+# Optional: Display section for preprocessing and analysis results
+st.sidebar.header("Additional Options")
+# Here you can add more options for preprocessing or analysis if needed
