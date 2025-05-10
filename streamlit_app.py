@@ -1,29 +1,35 @@
 import streamlit as st
 import pandas as pd
 
-# Sidebar configuration
+# Sidebar Navigation
 st.sidebar.title("Menu")
-st.sidebar.radio("Navigate", options=["Upload Data", "Preprocessing Data", "Hasil Analisis"])
+menu_options = ["Upload Data", "Preprocessing Data"]
+choice = st.sidebar.radio("Select an option", menu_options)
 
 # Main title
 st.title("Pick your file here:")
 
-# File uploader
-uploaded_file = st.file_uploader("Select your files here:", type=['csv', 'xlsx', 'txt'], label_visibility="collapsed")
-
+# Main content based on selected option
+if choice == "Upload Data":
+    st.title("Upload Data")
+    st.write("Pick your file here:")
+    uploaded_file = st.file_uploader("Select your files here:", type=['csv', 'xlsx'])
+    if uploaded_file is not None:
+        # You can add code to read and process the uploaded file here
+        st.success("File uploaded successfully!")
+        
+elif choice == "Preprocessing Data":
+    st.title("Preprocessing Data")
+    st.write("Select a file to process:")
+    uploaded_file = st.file_uploader("Select your files here:", type=['csv', 'xlsx'])
+    if uploaded_file is not None:
+        # You can add code to preprocess the data here
+        st.success("File ready for preprocessing!")
+    
 # Process button
 if st.button("Process"):
-    if uploaded_file is not None:
-        # Process the file here, e.g., read data
-        if uploaded_file.name.endswith('.csv'):
-            data = pd.read_csv(uploaded_file)
-        elif uploaded_file.name.endswith('.xlsx'):
-            data = pd.read_excel(uploaded_file)
-        elif uploaded_file.name.endswith('.txt'):
-            data = pd.read_csv(uploaded_file, sep="\t")  # Assuming tab-separated for txt files
-        
-        st.success("File berhasil diproses!")
-        # Display the resulting dataframe
-        st.dataframe(data)
-    else:
-        st.warning("Silakan unggah file terlebih dahulu.")
+    st.write("Processing...")
+    # You can add your processing logic here
+
+# Placeholder for output
+st.write("Output will be displayed here")
