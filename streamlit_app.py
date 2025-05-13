@@ -7,6 +7,8 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import nltk
+import torch
+import nltk
 
 # Download NLTK resources (uncomment if running for the first time)
 nltk.download('punkt_tab')
