@@ -22,7 +22,7 @@ if choice == "Upload Data":
                 elif uploaded_file.name.endswith('.xlsx'):
                     data = pd.read_excel(uploaded_file)
                 elif uploaded_file.name.endswith('.txt'):
-                    data = pd.read_csv(uploaded_file, sep="\t")  # Assuming tab-separated for txt files
+                    data = pd.read_csv(uploaded_file, sep="\t")
                 
                 if data.empty:
                     st.error("The uploaded file is empty.")
@@ -49,6 +49,7 @@ elif choice == "Preprocessing Data":
     if st.button("Process"):
         if selected_file is not None:
             try:
+                # Load the selected file
                 if selected_file.name.endswith('.csv'):
                     data = pd.read_csv(selected_file)
                 elif selected_file.name.endswith('.xlsx'):
@@ -56,6 +57,8 @@ elif choice == "Preprocessing Data":
                 elif selected_file.name.endswith('.txt'):
                     data = pd.read_csv(selected_file, sep="\t")
                 
+                # Example Processing Command
+                # Replace this with your actual processing logic.
                 if 'text' in data.columns:
                     processed_data = data[['text']]
                     st.write("Data Setelah Diproses:")
@@ -63,7 +66,13 @@ elif choice == "Preprocessing Data":
                 else:
                     st.error("Kolom 'text' tidak ditemukan dalam data.")
                 
-                st.dataframe(data.describe())  # Displaying basic statistics
+                # Display basic statistics
+                st.dataframe(data.describe())  
+                
+                # Show additional commands/results
+                st.write("Commands executed successfully!")
+                # Add any specific commands you'd like to show here
+                
             except pd.errors.EmptyDataError:
                 st.error("The selected file is empty or not properly formatted.")
             except Exception as e:
