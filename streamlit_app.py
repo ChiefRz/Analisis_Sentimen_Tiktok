@@ -9,8 +9,8 @@ from transformers import BertTokenizer
 import nltk
 
 # Download NLTK resources (uncomment if running for the first time)
-# nltk.download('punkt')
-# nltk.download('stopwords')
+nltk.download('punkt')
+nltk.download('stopwords')
 
 # Create a connection to the SQLite database (it will be created if it doesn't exist)
 conn = sqlite3.connect('data_files.db')
