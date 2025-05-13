@@ -118,11 +118,12 @@ elif choice == "Preprocessing Data":
 
                     # Menampilkan statistik dasar
                     st.write("Statistik Dasar dari Data yang Diproses:")
-                    st.dataframe(data['processed_text'])
+                    st.dataframe(data['processed_text'].describe())
+                else:
+                    st.error("Kolom 'text")
 
             except pd.errors.EmptyDataError:
                 st.error("File is empty or not properly formatted.")
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-        else:
-        st.warning("No files uploaded yet!")
+        
