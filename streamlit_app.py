@@ -111,7 +111,7 @@ elif choice == "Preprocessing Data":
                     data['processed_text'] = data['text'].apply(preprocess_text)
                     
                     # Tokenisasi menggunakan IndoBERT
-                    tokenizer = BertTokenizer.from_pretrained('indobert-base-uncased')
+                    tokenizer = BertTokenizer.from_pretrained('indobert-base-p2')
                     data['tokenized_text'] = data['processed_text'].apply(lambda x: tokenizer.encode(x, add_special_tokens=True))
                     
                     st.write("Data Setelah Diproses:")
