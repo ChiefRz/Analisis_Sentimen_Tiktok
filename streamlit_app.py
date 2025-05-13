@@ -115,3 +115,7 @@ elif choice == "Preprocessing Data":
                     
                     st.write("Data Setelah Diproses:")
                     st.dataframe(data[['text', 'processed_text', 'tokenized_text']])
+
+                    # Menampilkan statistik dasar
+                    st.write("Statistik Dasar dari Data yang Diproses:")
+                    st.dataframe(data['processed_text'].
