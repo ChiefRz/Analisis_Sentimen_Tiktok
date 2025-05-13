@@ -5,7 +5,7 @@ import os
 import string
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import nltk
 
 # Download NLTK resources (uncomment if running for the first time)
@@ -120,11 +120,30 @@ elif choice == "Preprocessing Data":
                     # Menampilkan statistik dasar
                     st.write("Statistik Dasar dari Data yang Diproses:")
                     st.dataframe(data['processed_text'].describe())
+
+                    model = AutoModelForSequenceClassification.from_pretrained('indolem/indobert-base-sentiment')
+                    def analyze_sentiment(text):
+                        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+                        with torch.no_grad():
+                            outputs = model(**inputs)
+                        logits = outputs.logits
+                        predicted_class = torch.argmax(logits, dim=1).item()
+                        return predicted_class
+
+                    data['sentiment'] = data['processed_text'].apply(analyze_sentiment)
+                    # Menampilkan hasil analisis sentimen
+                    sentiment_mapping = {0: 'Negatif', 1: 'Netral', 2: 'Positif'}
+                    data['sentiment'] = data['sentiment'].map(sentiment_mapping)
+                    st.write("Hasil Analisis Sentimen:")
+                    st.dataframe(data[['text', 'processed_text', 'sentiment']])
                 else:
-                    st.error("Kolom 'text")
+                    st.error("Kolom 'text' tidak ditemukan dalam data.")
 
             except pd.errors.EmptyDataError:
                 st.error("File is empty or not properly formatted.")
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-        
+
+elif choice == "Hasil Analisis":
+    st.write("Hasil analisis sentimen akan ditampilkan di sini.")
+    
