@@ -2,4 +2,3 @@ streamlit
 nltk
 transformers
 torch
-pytorch
