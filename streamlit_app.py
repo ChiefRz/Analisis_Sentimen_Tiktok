@@ -27,37 +27,25 @@ if choice == "Upload Data":
             st.dataframe(data)
             st.session_state.uploaded_files.append(uploaded_file)
 
-# Preprocessing Data Section
-elif choice == "Preprocessing Data":
-    st.write("Pick your file here:")
-    
-    # Dropdown to select from previously uploaded files
-    if st.session_state.uploaded_files:
-        selected_file = st.selectbox("Select a file:", st.session_state.uploaded_files, format_func=lambda x: x.name)
-    else:
-        st.warning("No files uploaded yet!")
-        selected_file = None
-    if st.button("Process"):
-        if selected_file is not None:
-             # Preprocessing logic here
-            st.success("File ready for preprocessing!")
-            # Read the selected file
-            if selected_file.name.endswith('.csv'):
-                data = pd.read_csv(selected_file)
+            try:
+                if selected_file.name.endswith('.csv'):
+                    data = pd.read_csv(selected_file)
+                elif selected_file.name.endswith('.xlsx'):
+                    data = pd.read_excel(selected_file)
+                elif selected_file.name.endswith('.txt'):
+                    data = pd.read_csv(selected_file, sep="\t")
+                
                 if 'text' in data.columns:
                     processed_data = data[['text']]
                     st.write("Data Setelah Diproses:")
                     st.dataframe(processed_data)
                 else:
                     st.error("Kolom 'text' tidak ditemukan dalam data.")
-            elif selected_file.name.endswith('.xlsx'):
-                data = pd.read_excel(selected_file)
-            elif selected_file.name.endswith('.txt'):
-                data = pd.read_csv(selected_file, sep="\t")
                 
-            st.dataframe(data.describe())  # Displaying basic statistics
+                st.dataframe(data.describe())  # Displaying basic statistics
+            except pd.errors.EmptyDataError:
+                st.error("The selected file is empty or not properly formatted.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
         else:
             st.warning("Please select a file to process.")
-
-# Placeholder for output
-st.write("Output will be displayed here")
