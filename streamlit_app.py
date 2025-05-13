@@ -124,3 +124,5 @@ elif choice == "Preprocessing Data":
                 st.error("File is empty or not properly formatted.")
             except Exception as e:
                 st.error(f"An error occurred: {e}")
+        else:
+        st.warning("No files uploaded yet!")
