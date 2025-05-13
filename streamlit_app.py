@@ -91,7 +91,7 @@ elif choice == "Preprocessing Data":
                     st.error("Kolom 'text' tidak ditemukan dalam data.")
                 
                 # Display basic statistics
-                st.dataframe(data.describe())  
+                st.dataframe(processed_data.describe())  
                 
                 st.write("Commands executed successfully!")
                 
