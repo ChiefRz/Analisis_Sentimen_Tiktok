@@ -44,6 +44,12 @@ elif choice == "Preprocessing Data":
             # Read the selected file
             if selected_file.name.endswith('.csv'):
                 data = pd.read_csv(selected_file)
+                if 'text' in data.columns:
+                    processed_data = data[['text']]
+                    st.write("Data Setelah Diproses:")
+                    st.dataframe(processed_data)
+                else:
+                    st.error("Kolom 'text' tidak ditemukan dalam data.")
             elif selected_file.name.endswith('.xlsx'):
                 data = pd.read_excel(selected_file)
             elif selected_file.name.endswith('.txt'):
@@ -52,6 +58,6 @@ elif choice == "Preprocessing Data":
             st.dataframe(data.describe())  # Displaying basic statistics
         else:
             st.warning("Please select a file to process.")
-            
+
 # Placeholder for output
 st.write("Output will be displayed here")
