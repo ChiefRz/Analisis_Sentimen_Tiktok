@@ -118,4 +118,4 @@ elif choice == "Preprocessing Data":
 
                     # Menampilkan statistik dasar
                     st.write("Statistik Dasar dari Data yang Diproses:")
-                    st.dataframe(data['processed_text'].
+                    st.dataframe(data['processed_text'])
