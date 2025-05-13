@@ -2,6 +2,15 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
+import string
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from transformers import BertTokenizer
+import nltk
+
+# Download NLTK resources (uncomment if running for the first time)
+nltk.download('punkt')
+nltk.download('stopwords')
 
 # Create a connection to the SQLite database (it will be created if it doesn't exist)
 conn = sqlite3.connect('data_files.db')
@@ -82,22 +91,27 @@ elif choice == "Preprocessing Data":
                 elif selected_file_name.endswith('.txt'):
                     data = pd.read_csv(selected_file_path, sep="\t")
                 
-                # Example Processing Command
+                # Preprocessing steps
                 if 'text' in data.columns:
-                    processed_data = data[['text']]
+                    # Fungsi untuk preprocessing teks
+                    def preprocess_text(text):
+                        # Lowercasing
+                        text = text.lower()
+                        # Menghapus tanda baca
+                        text = text.translate(str.maketrans('', '', string.punctuation))
+                        # Tokenisasi
+                        tokens = word_tokenize(text)
+                        # Menghapus kata henti
+                        stop_words = set(stopwords.words('indonesian'))  # Ganti dengan 'english' jika menggunakan bahasa Inggris
+                        tokens = [word for word in tokens if word not in stop_words]
+                        return ' '.join(tokens)
+
+                    # Terapkan preprocessing pada kolom 'text'
+                    data['processed_text'] = data['text'].apply(preprocess_text)
+                    
+                    # Tokenisasi menggunakan IndoBERT
+                    tokenizer = BertTokenizer.from_pretrained('indobert-base-uncased')
+                    data['tokenized_text'] = data['processed_text'].apply(lambda x: tokenizer.encode(x, add_special_tokens=True))
+                    
                     st.write("Data Setelah Diproses:")
-                    st.dataframe(processed_data)
-                else:
-                    st.error("Kolom 'text' tidak ditemukan dalam data.")
-                
-                # Display basic statistics
-                st.dataframe(processed_data.describe())  
-                
-                st.write("Commands executed successfully!")
-                
-            except pd.errors.EmptyDataError:
-                st.error("The selected file is empty or not properly formatted.")
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
-    else:
-        st.warning("No files uploaded yet!")
+                    st.dataframe
