@@ -9,6 +9,7 @@ from transformers import BertTokenizer
 import nltk
 
 # Download NLTK resources (uncomment if running for the first time)
+nltk.download('punkt_tab')
 nltk.download('punkt')
 nltk.download('stopwords')
 
