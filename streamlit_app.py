@@ -123,7 +123,7 @@ elif choice == "Preprocessing Data":
                     st.write("Statistik Dasar dari Data yang Diproses:")
                     st.dataframe(data['processed_text'].describe())
 
-                    model = AutoModelForSequenceClassification.from_pretrained('dafex/autotrain-indobert-sentiment-analysis-2713480683, use_auth_token=True')
+                    model = AutoModelForSequenceClassification.from_pretrained('dafex/autotrain-indobert-sentiment-analysis-2713480683')
                     def analyze_sentiment(text):
                         inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                         with torch.no_grad():
