@@ -114,4 +114,4 @@ elif choice == "Preprocessing Data":
                     data['tokenized_text'] = data['processed_text'].apply(lambda x: tokenizer.encode(x, add_special_tokens=True))
                     
                     st.write("Data Setelah Diproses:")
-                    st.dataframe(data)
+                    st.dataframe(data[['text', 'processed_text', 'tokenized_text']])
