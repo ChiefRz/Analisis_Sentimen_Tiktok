@@ -15,18 +15,39 @@ if choice == "Upload Data":
     
     if st.button("Process"):
         if uploaded_file is not None:
-            # Process the uploaded file
-            if uploaded_file.name.endswith('.csv'):
-                data = pd.read_csv(uploaded_file)
-            elif uploaded_file.name.endswith('.xlsx'):
-                data = pd.read_excel(uploaded_file)
-            elif uploaded_file.name.endswith('.txt'):
-                data = pd.read_csv(uploaded_file, sep="\t")  # Assuming tab-separated for txt files
-            
-            st.success("File berhasil diproses!")
-            st.dataframe(data)
-            st.session_state.uploaded_files.append(uploaded_file)
+            try:
+                # Process the uploaded file
+                if uploaded_file.name.endswith('.csv'):
+                    data = pd.read_csv(uploaded_file)
+                elif uploaded_file.name.endswith('.xlsx'):
+                    data = pd.read_excel(uploaded_file)
+                elif uploaded_file.name.endswith('.txt'):
+                    data = pd.read_csv(uploaded_file, sep="\t")  # Assuming tab-separated for txt files
+                
+                if data.empty:
+                    st.error("The uploaded file is empty.")
+                else:
+                    st.success("File berhasil diproses!")
+                    st.dataframe(data)
+                    st.session_state.uploaded_files.append(uploaded_file)
+                    
+            except pd.errors.EmptyDataError:
+                st.error("File is empty or not properly formatted.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
 
+# Preprocessing Data Section
+elif choice == "Preprocessing Data":
+    st.write("Pick your file here:")
+    
+    if st.session_state.uploaded_files:
+        selected_file = st.selectbox("Select a file:", st.session_state.uploaded_files, format_func=lambda x: x.name)
+    else:
+        st.warning("No files uploaded yet!")
+        selected_file = None
+    
+    if st.button("Process"):
+        if selected_file is not None:
             try:
                 if selected_file.name.endswith('.csv'):
                     data = pd.read_csv(selected_file)
