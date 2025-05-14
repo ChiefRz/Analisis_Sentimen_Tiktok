@@ -126,7 +126,7 @@ elif choice == "Preprocessing Data":
                     model = AutoModelForSequenceClassification.from_pretrained('aadhistii/indobert-lite-base-p1-finetuned-sentiment-analysis')
                     def analyze_sentiment(text):
                         try:
-                            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
+                            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                             with torch.no_grad():
                                 outputs = model(**inputs)
                             logits = outputs.logits
@@ -134,17 +134,17 @@ elif choice == "Preprocessing Data":
                             return predicted_class
                         except Exception as e:
                             st.error(f"Error in sentiment analysis: {e}")
-                        return None
+                            return None
 
                     data['sentiment'] = data['processed_text'].apply(analyze_sentiment)
 
-# Menampilkan hasil analisis sentimen
+                    # Menampilkan hasil analisis sentimen
+                    data['sentiment'] = data['processed_text'].apply(analyze_sentiment)
+                    # Menampilkan hasil analisis sentimen
                     sentiment_mapping = {0: 'Negatif', 1: 'Netral', 2: 'Positif'}
                     data['sentiment'] = data['sentiment'].map(sentiment_mapping)
-
                     st.write("Hasil Analisis Sentimen:")
                     st.dataframe(data[['text', 'processed_text', 'sentiment']])
-
                 else:
                     st.error("Kolom 'text' tidak ditemukan dalam data.")
 
