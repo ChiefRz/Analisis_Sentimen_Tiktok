@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import re
 import sqlite3
 import os
 import string
@@ -99,6 +100,8 @@ elif choice == "Preprocessing Data":
                     def preprocess_text(text):
                         # Lowercasing
                         text = text.lower()
+                        # Menghapus emoticon
+                        text = re.sub(r'[^\w\s]', '', text)
                         # Menghapus tanda baca
                         text = text.translate(str.maketrans('', '', string.punctuation))
                         # Tokenisasi
