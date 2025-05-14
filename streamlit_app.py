@@ -123,7 +123,7 @@ elif choice == "Preprocessing Data":
                     st.dataframe(data['processed_text'].describe())
 
                     model = AutoModelForSequenceClassification.from_pretrained(
-                        'gilangarisptr/indobert-large-p2-finetuned-sentiment')
+                        'crypter70/IndoBERT-Sentiment-Analysis')
                     def analyze_sentiment(text):
                         try:
                             inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
