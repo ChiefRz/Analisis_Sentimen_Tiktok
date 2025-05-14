@@ -101,8 +101,16 @@ elif choice == "Preprocessing Data":
                         # Lowercasing
                         text = text.lower()
                         # Menghapus emoticon
-                        text = re.sub(r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF\U0001F700-\U0001F77F\U0001F900-\U0001F9FF\U0001F1E0-\U0001F1FF]+', '', text)  # Menghapus emotikon
-                        # Menghapus tanda baca
+                        text = re.sub(r'[\U0001F600-\U0001F64F'  # Emotikon wajah
+                                        r'\U0001F300-\U0001F5FF'  # Simbol dan objek
+                                        r'\U0001F680-\U0001F6FF'  # Transportasi dan peta
+                                        r'\U0001F700-\U0001F77F'  # Alat dan simbol lainnya
+                                        r'\U0001F900-\U0001F9FF'  # Emotikon tambahan
+                                        r'\U0001F1E0-\U0001F1FF'  # Bendera
+                                        r'\u2600-\u26FF'          # Simbol umum
+                                        r'\u2700-\u27BF'          # Simbol tambahan
+                                        r'\s*[\(\[]*[\w\s]*[\)\]]*\s*'  # Menghapus teks dalam tanda kurung
+                                        r']+', '', text)# Menghapus tanda baca
                         text = text.translate(str.maketrans('', '', string.punctuation))
                         # Tokenisasi
                         tokens = word_tokenize(text)
