@@ -110,7 +110,8 @@ elif choice == "Preprocessing Data":
                                         r'\u2600-\u26FF'          # Simbol umum
                                         r'\u2700-\u27BF'          # Simbol tambahan
                                         r'\s*[\(\[]*[\w\s]*[\)\]]*\s*'  # Menghapus teks dalam tanda kurung
-                                        r']+', '', text)# Menghapus tanda baca
+                                        r']+', '', text)            # Menghapus tanda baca
+                        text = re.sub(r'[^\w\s]', '', text)
                         text = text.translate(str.maketrans('', '', string.punctuation))
                         # Tokenisasi
                         tokens = word_tokenize(text)
