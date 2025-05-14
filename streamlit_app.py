@@ -124,20 +124,30 @@ elif choice == "Preprocessing Data":
                     st.dataframe(data['processed_text'].describe())
 
                     model = AutoModelForSequenceClassification.from_pretrained('dafex/autotrain-indobert-sentiment-analysis-2713480683')
+                    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                    model.to(device)
+
                     def analyze_sentiment(text):
-                        inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
-                        with torch.no_grad():
-                            outputs = model(**inputs)
-                        logits = outputs.logits
-                        predicted_class = torch.argmax(logits, dim=1).item()
-                        return predicted_class
+                        try:
+                            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512).to(device)
+                            with torch.no_grad():
+                                outputs = model(**inputs)
+                            logits = outputs.logits
+                            predicted_class = torch.argmax(logits, dim=1).item()
+                            return predicted_class
+                        except Exception as e:
+                            st.error(f"Error in sentiment analysis: {e}")
+                        return None
 
                     data['sentiment'] = data['processed_text'].apply(analyze_sentiment)
-                    # Menampilkan hasil analisis sentimen
+
+# Menampilkan hasil analisis sentimen
                     sentiment_mapping = {0: 'Negatif', 1: 'Netral', 2: 'Positif'}
                     data['sentiment'] = data['sentiment'].map(sentiment_mapping)
+
                     st.write("Hasil Analisis Sentimen:")
                     st.dataframe(data[['text', 'processed_text', 'sentiment']])
+
                 else:
                     st.error("Kolom 'text' tidak ditemukan dalam data.")
 
