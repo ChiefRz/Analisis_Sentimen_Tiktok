@@ -133,12 +133,42 @@ elif choice == "Preprocessing Data":
                     # Menampilkan statistik dasar
                     st.write("Statistik Dasar dari Data yang Diproses:")
                     st.dataframe(data['processed_text'].describe())
+                else:
+                    st.error("Kolom 'text' tidak ditemukan dalam data.")
 
+            except pd.errors.EmptyDataError:
+                st.error("File is empty or not properly formatted.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
+
+elif choice == "Hasil Analisis":
+    st.write("Pick your file here:")
+    
+    c.execute("SELECT * FROM files")
+    files = c.fetchall()
+    
+    if files:
+        options = {file[1]: file[2] for file in files}  # Create a mapping of filename to filepath
+        selected_file_name = st.selectbox("Select a file:", options.keys())
+        
+        if st.button("Process"):
+            selected_file_path = options[selected_file_name]  # Get the file path for the selected file
+            try:
+                # Load the selected file
+                if selected_file_name.endswith('.csv'):
+                    data = pd.read_csv(selected_file_path)
+                elif selected_file_name.endswith('.xlsx'):
+                    data = pd.read_excel(selected_file_path)
+                elif selected_file_name.endswith('.txt'):
+                    data = pd.read_csv(selected_file_path, sep="\t")
+                
+                # Preprocessing steps
+                if 'tokenized_text' in data.columns:
                     model = AutoModelForSequenceClassification.from_pretrained(
                         'crypter70/IndoBERT-Sentiment-Analysis')
-                    def analyze_sentiment(text):
+                    def analyze_sentiment(tokenized_text):
                         try:
-                            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+                            inputs = tokenizer(tokenized_text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                             with torch.no_grad():
                                 outputs = model(**inputs)
                             logits = outputs.logits
@@ -148,10 +178,8 @@ elif choice == "Preprocessing Data":
                             st.error(f"Error in sentiment analysis: {e}")
                             return None
 
-                    data['sentiment'] = data['processed_text'].apply(analyze_sentiment)
-
                     # Menampilkan hasil analisis sentimen
-                    data['sentiment'] = data['processed_text'].apply(analyze_sentiment)
+                    data['sentiment'] = data['tokenized_text'].apply(analyze_sentiment)
                     # Menampilkan hasil analisis sentimen
                     sentiment_mapping = {0: 'Negatif', 1: 'Netral', 2: 'Positif'}
                     data['sentiment'] = data['sentiment'].map(sentiment_mapping)
@@ -164,7 +192,5 @@ elif choice == "Preprocessing Data":
                 st.error("File is empty or not properly formatted.")
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-
-elif choice == "Hasil Analisis":
-    st.write("Hasil analisis sentimen akan ditampilkan di sini.")
+                
     
