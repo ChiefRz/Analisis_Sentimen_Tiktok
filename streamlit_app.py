@@ -186,11 +186,8 @@ elif choice == "Hasil Analisis":
                     st.write("Hasil Analisis Sentimen:")
                     st.dataframe(data[['text', 'processed_text', 'sentiment']])
                 else:
-                    st.error("Kolom 'text' tidak ditemukan dalam data.")
-
+                    st.error("Kolom 'tokenized_text' tidak ditemukan dalam data.")
             except pd.errors.EmptyDataError:
                 st.error("File is empty or not properly formatted.")
             except Exception as e:
                 st.error(f"An error occurred: {e}")
-                
-    
