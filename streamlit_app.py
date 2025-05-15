@@ -168,7 +168,7 @@ elif choice == "Hasil Analisis":
                         'crypter70/IndoBERT-Sentiment-Analysis')
                     def analyze_sentiment(tokenized_text):
                         try:
-                            inputs = tokenizer(tokenized_text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+                            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                             with torch.no_grad():
                                 outputs = model(**inputs)
                             logits = outputs.logits
