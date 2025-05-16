@@ -138,7 +138,7 @@ elif choice == "Preprocessing Data":
                     c.execute('''
                         CREATE TABLE IF NOT EXISTS processed_data (
                             id INTEGER PRIMARY KEY,
-                            original_text TEXT,
+                            text TEXT,
                             processed_text TEXT,
                             tokenized_text TEXT
                         )
