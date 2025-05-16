@@ -168,7 +168,7 @@ elif choice == "Hasil Analisis":
     files = c.fetchall()
     
     if processed_files:
-        options = {f"ID: {file[0]} - {file[1]}": file for file in processed_files}  # Create a mapping of ID and original text
+        options = {f"ID: {file[0]} Original : {file[1]}": file for file in processed_files}  # Create a mapping of ID and original text
         selected_file = st.selectbox("Select a processed data entry:", options.keys())
         selected_file_data = options[selected_file]
         
