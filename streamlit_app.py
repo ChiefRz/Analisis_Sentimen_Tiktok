@@ -158,47 +158,54 @@ elif choice == "Preprocessing Data":
 elif choice == "Hasil Analisis":
     st.write("Pick your file here:")
     
-    c.execute("SELECT * FROM processed_data")
+    c.execute("SELECT * FROM files")
     files = c.fetchall()
     
-    if processed_files:
-        options = {f"ID: {file[0]} - {file[1]}": file for file in files}  # Create a mapping of ID and filename
-        selected_file = st.selectbox("Select a processed data entry:", options.keys())
-        selected_file_data = options[selected_file]
+    if files:
+        options = {file[1]: file[2] for file in files}  # Create a mapping of filename to filepath
+        selected_file_name = st.selectbox("Select a file:", options.keys())
         
-        if st.button("Analyze Sentiment"):
-            # Ambil data dari selected_file_data
-            original_text = selected_file_data[1]
-            processed_text = selected_file_data[2]
-            tokenized_text = eval(selected_file_data[3])
+        if st.button("Process"):
+            selected_file_path = options[selected_file_name]  # Get the file path for the selected file
+            try:
+                # Load the selected file
+                if selected_file_name.endswith('.csv'):
+                    data = pd.read_csv(selected_file_path)
+                elif selected_file_name.endswith('.xlsx'):
+                    data = pd.read_excel(selected_file_path)
+                elif selected_file_name.endswith('.txt'):
+                    data = pd.read_csv(selected_file_path, sep="\t")
                 
-                # Memuat model untuk analisis sentimen
-            model = AutoModelForSequenceClassification.from_pretrained('crypter70/IndoBERT-Sentiment-Analysis')
-            tokenizer = AutoTokenizer.from_pretrained('indolem/indobert-base-uncased')  # Pastikan tokenizer diinisialisasi
+                # Memastikan kolom 'tokenized_text' ada
+                if 'tokenized_text' in data.columns:
+                    # Memuat model untuk analisis sentimen
+                    model = AutoModelForSequenceClassification.from_pretrained('crypter70/IndoBERT-Sentiment-Analysis')
+                    tokenizer = AutoTokenizer.from_pretrained('indolem/indobert-base-uncased')  # Pastikan tokenizer diinisialisasi
 
                     # Fungsi untuk analisis sentimen
-            def analyze_sentiment(tokenized_text):
-                try:
-                    inputs = tokenizer(tokenized_text, return_tensors="pt", padding=True, truncation=True, max_length=512)
-                    with torch.no_grad():
-                        outputs = model(**inputs)
-                    logits = outputs.logits
-                    predicted_class = torch.argmax(logits, dim=1).item()
-                    return predicted_class
-                except Exception as e:
-                    st.error(f"Error in sentiment analysis: {e}")
-                    return None
+                    def analyze_sentiment(tokenized_text):
+                        try:
+                            inputs = tokenizer(tokenized_text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+                            with torch.no_grad():
+                                outputs = model(**inputs)
+                            logits = outputs.logits
+                            predicted_class = torch.argmax(logits, dim=1).item()
+                            return predicted_class
+                        except Exception as e:
+                            st.error(f"Error in sentiment analysis: {e}")
+                            return None
 
-            # Menampilkan hasil analisis sentimen
-            sentiment_result = analyze_sentiment(tokenized_text)
-            sentiment_mapping = {0: 'Negatif', 1: 'Netral', 2: 'Positif'}
-            sentiment_label = sentiment_mapping.get(sentiment_result, "Unknown")
-            st.write("Hasil Analisis Sentimen:")
-            st.write(f"Original Text: {original_text}")
-            st.write(f"Processed Text: {processed_text}")
-            st.write(f"Sentiment: {sentiment_label}")
-        else:
-            st.warning("Silakan tekan tombol 'Analyze Sentiment' untuk melakukan analisis.")
-    else:
-        st.error("Tidak ada data yang ditemukan di tabel processed_data.")
+                    # Menampilkan hasil analisis sentimen
+                    data['sentiment'] = data['tokenized_text'].apply(analyze_sentiment)
+                    # Menampilkan hasil analisis sentimen
+                    sentiment_mapping = {0: 'Negatif', 1: 'Netral', 2: 'Positif'}
+                    data['sentiment'] = data['sentiment'].map(sentiment_mapping)
+                    st.write("Hasil Analisis Sentimen:")
+                    st.dataframe(data[['text', 'processed_text', 'sentiment']])
+                else:
+                    st.error("Kolom 'tokenized_text' tidak ditemukan dalam data.")
+            except pd.errors.EmptyDataError:
+                st.error("File is empty or not properly formatted.")
+            except Exception as e:
+                st.error(f"An error occurred: {e}")
 
