@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 import re
 import sqlite3
 import os
@@ -199,6 +201,19 @@ elif choice == "Hasil Analisis":
                     data['sentiment'] = data['sentiment'].map(sentiment_mapping)
                     st.write("Hasil Analisis Sentimen:")
                     st.dataframe(data[['text', 'processed_text', 'sentiment']])
+
+                    # Visualisasi distribusi sentimen
+                    sentiment_counts = data['sentiment'].value_counts()
+                    st.write("Distribusi Sentimen:")
+                    st.bar_chart(sentiment_counts)
+                    # Alternatif visualisasi menggunakan matplotlib dan seaborn
+                    plt.figure(figsize=(10, 6))
+                    sns.countplot(x='sentiment', data=data, order=sentiment_counts.index)
+                    plt.title('Distribusi Sentimen')
+                    plt.xlabel('Sentimen')
+                    plt.ylabel('Jumlah')
+                    plt.xticks(rotation=45)
+                    st.pyplot(plt)
                 else:
                     st.error("Kolom 'tokenized_text' tidak ditemukan dalam data.")
             except pd.errors.EmptyDataError:
