@@ -135,24 +135,18 @@ elif choice == "Preprocessing Data":
                     st.dataframe(data['processed_text'].describe())
 
                     # Buat tabel untuk menyimpan data yang diproses jika belum ada
-                    c.execute('''
-                        CREATE TABLE IF NOT EXISTS processed_data (
-                            id INTEGER PRIMARY KEY,
-                            original_text TEXT,
-                            processed_text TEXT,
-                            tokenized_text TEXT
-                        )
-                    ''')
-                    conn.commit()
+                    
 
-                     # Simpan setiap baris data yang telah diproses ke dalam tabel
-                    for index, row in data.iterrows():
-                        c.execute('''
-                            INSERT INTO processed_data (original_text, processed_text, tokenized_text)
-                            VALUES (?, ?, ?)
-                        ''', (row['text'], row['processed_text'], str(row['tokenized_text'])))
+                     # Simpan hasil preprocessing ke dalam file CSV
+                    processed_file_name = f"processed_{uploaded_file.name.split('.')[0]}.csv"
+                    processed_file_path = f"uploads/{processed_file_name}"
+                    data.to_csv(processed_file_path, index=False)
+
+                    # Simpan metadata file CSV ke dalam database
+                    c.execute("INSERT INTO files (filename, filepath) VALUES (?, ?)",
+                              (processed_file_name, processed_file_path))
                     conn.commit()
-                    st.success("Data yang telah diproses berhasil disimpan ke database.")
+                    st.success("Data yang telah diproses berhasil disimpan ke file CSV dan database.")
                 else:
                     st.error("Kolom 'text' tidak ditemukan dalam data.")
 
@@ -168,7 +162,7 @@ elif choice == "Hasil Analisis":
     files = c.fetchall()
     
     if processed_files:
-        options = {f"ID: {file[0]} Original : {file[1]}": file for file in processed_files}  # Create a mapping of ID and original text
+        options = {f"ID: {file[0]} - {file[1]}": file for file in files}  # Create a mapping of ID and filename
         selected_file = st.selectbox("Select a processed data entry:", options.keys())
         selected_file_data = options[selected_file]
         
