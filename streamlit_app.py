@@ -162,13 +162,16 @@ elif choice == "Hasil Analisis":
                 elif selected_file_name.endswith('.txt'):
                     data = pd.read_csv(selected_file_path, sep="\t")
                 
-                # Preprocessing steps
+                # Memastikan kolom 'tokenized_text' ada
                 if 'tokenized_text' in data.columns:
-                    model = AutoModelForSequenceClassification.from_pretrained(
-                        'crypter70/IndoBERT-Sentiment-Analysis')
+                    # Memuat model untuk analisis sentimen
+                    model = AutoModelForSequenceClassification.from_pretrained('crypter70/IndoBERT-Sentiment-Analysis')
+                    tokenizer = AutoTokenizer.from_pretrained('indolem/indobert-base-uncased')  # Pastikan tokenizer diinisialisasi
+
+                    # Fungsi untuk analisis sentimen
                     def analyze_sentiment(tokenized_text):
                         try:
-                            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+                            inputs = tokenizer(tokenized_text, return_tensors="pt", padding=True, truncation=True, max_length=512)
                             with torch.no_grad():
                                 outputs = model(**inputs)
                             logits = outputs.logits
@@ -191,3 +194,4 @@ elif choice == "Hasil Analisis":
                 st.error("File is empty or not properly formatted.")
             except Exception as e:
                 st.error(f"An error occurred: {e}")
+
