@@ -134,11 +134,8 @@ elif choice == "Preprocessing Data":
                     st.write("Statistik Dasar dari Data yang Diproses:")
                     st.dataframe(data['processed_text'].describe())
 
-                    # Buat tabel untuk menyimpan data yang diproses jika belum ada
-                    
-
                      # Simpan hasil preprocessing ke dalam file CSV
-                    processed_file_name = f"processed_{uploaded_file.name.split('.')[0]}.csv"
+                    processed_file_name = f"processed_{selected_file_name.split('.')[0]}.csv"
                     processed_file_path = f"uploads/{processed_file_name}"
                     data.to_csv(processed_file_path, index=False)
 
