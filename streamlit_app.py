@@ -136,20 +136,20 @@ elif choice == "Preprocessing Data":
 
                     # Simpan hasil preprocessing ke database
                     # Buat tabel untuk menyimpan data yang diproses jika belum ada
-                    c.execute('''
-                        CREATE TABLE IF NOT EXISTS processed_data (
-                            id INTEGER PRIMARY KEY,
-                            original_text TEXT,
-                            processed_text TEXT,
-                            tokenized_text TEXT
-                        )
-                    ''')
-                    conn.commit()
+                    # c.execute('''
+                    #    CREATE TABLE IF NOT EXISTS processed_data (
+                    #        id INTEGER PRIMARY KEY,
+                    #        original_text TEXT,
+                    #        processed_text TEXT,
+                    #        tokenized_text TEXT
+                    #    )
+                    #''')
+                    #conn.commit()
 
                      # Simpan setiap baris data yang telah diproses ke dalam tabel
                     for index, row in data.iterrows():
                         c.execute('''
-                            INSERT INTO processed_data (original_text, processed_text, tokenized_text)
+                            INSERT INTO files (original_text, processed_text, tokenized_text)
                             VALUES (?, ?, ?)
                         ''', (row['text'], row['processed_text'], str(row['tokenized_text'])))
                     conn.commit()
