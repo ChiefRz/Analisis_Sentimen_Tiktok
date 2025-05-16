@@ -149,7 +149,7 @@ elif choice == "Preprocessing Data":
                      # Simpan setiap baris data yang telah diproses ke dalam tabel
                     for index, row in data.iterrows():
                         c.execute('''
-                            INSERT INTO files (original_text, processed_text, tokenized_text)
+                            INSERT INTO files (text, processed_text, tokenized_text)
                             VALUES (?, ?, ?)
                         ''', (row['text'], row['processed_text'], str(row['tokenized_text'])))
                     conn.commit()
