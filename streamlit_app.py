@@ -138,7 +138,7 @@ elif choice == "Preprocessing Data":
                     c.execute('''
                         CREATE TABLE IF NOT EXISTS processed_data (
                             id INTEGER PRIMARY KEY,
-                            text TEXT,
+                            original_text TEXT,
                             processed_text TEXT,
                             tokenized_text TEXT
                         )
@@ -148,7 +148,7 @@ elif choice == "Preprocessing Data":
                      # Simpan setiap baris data yang telah diproses ke dalam tabel
                     for index, row in data.iterrows():
                         c.execute('''
-                            INSERT INTO processed_data (text, processed_text, tokenized_text)
+                            INSERT INTO processed_data (original_text, processed_text, tokenized_text)
                             VALUES (?, ?, ?)
                         ''', (row['text'], row['processed_text'], str(row['tokenized_text'])))
                     conn.commit()
