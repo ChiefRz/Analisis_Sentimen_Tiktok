@@ -198,7 +198,7 @@ elif choice == "Preprocessing Data":
                     # Add the new processed file to the database
                     has_sentiment_col_processed = any(col in data.columns for col in ['sentiment', 'label', 'sentimen'])
                     c.execute("INSERT INTO files (filename, filepath, has_processed_text, has_sentiment_labels) VALUES (?, ?, ?, ?)",
-                              (processed_file_name, processed_file_path, TRUE, has_sentiment_col_processed ))
+                              (processed_file_name, processed_file_path, True, has_sentiment_col_processed )) # <--- DIPERBAIKI DI SINI
                     conn.commit()
                     
                     st.success(f"Data yang telah diproses disimpan sebagai '{processed_file_name}' dan metadata diperbarui di database.")
