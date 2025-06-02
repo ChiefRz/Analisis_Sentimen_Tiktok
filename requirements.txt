@@ -1,7 +1,7 @@
-streamlit
-nltk
-transformers
-torch
-regex
-matplotlib
-seaborn
+matplotlib==3.10.3
+nltk==3.9.1
+pandas==2.2.3
+Sastrawi==1.0.1
+scikit_learn==1.6.1
+seaborn==0.13.2
+streamlit==1.45.1
