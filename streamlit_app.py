@@ -21,15 +21,9 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.pipeline import Pipeline # Optional, but good for chaining
 
 # --- NLTK Resource Downloads ---
-try:
-    nltk.data.find('tokenizers/punkt')
-except nltk.downloader.DownloadError:
-    nltk.download('punkt')
-
-try:
-    nltk.data.find('corpora/stopwords')
-except nltk.downloader.DownloadError:
-    nltk.download('stopwords')
+nltk.download('punkt_tab')
+nltk.download('punkt')
+nltk.download('stopwords')
 
 # --- Database Setup ---
 conn = sqlite3.connect('data_files_svm.db') # Use a new DB name or clear old one
