@@ -243,58 +243,45 @@ elif choice == "Preprocessing Data":
 elif choice == "Hasil Analisis (SVM + TF-IDF)":
     st.header("📊 Hasil Analisis Sentimen (SVM & TF-IDF)")
 
-    # Fetch files that have been processed OR original files that might have labels
-    c.execute("SELECT id, filename, filepath, has_processed_text, has_sentiment_labels FROM files")
-    all_files_records = c.fetchall()
+    # Ambil file yang memiliki label sentimen (baik asli maupun yang sudah diproses)
+    c.execute("SELECT id, filename, filepath, has_processed_text FROM files WHERE has_sentiment_labels = TRUE")
+    files_for_analysis = c.fetchall()
 
-    if not all_files_records:
-        st.warning("Tidak ada file yang tersedia. Silakan unggah dan proses data terlebih dahulu.")
+    if not files_for_analysis:
+        st.warning("Tidak ada file yang memiliki kolom label sentimen terdeteksi. Pastikan file Anda memiliki kolom seperti 'sentiment', 'label', 'kelas', atau pertahankan kolom label saat preprocessing.")
     else:
-        # Prioritize processed files for selection
-        # Display filename and whether it's processed or has labels
-        file_options = {}
-        for record in all_files_records:
-            id, name, path, processed, labels = record
-            display_name = f"{name} (ID: {id})"
-            if processed:
-                display_name += " [Processed]"
-            elif labels: # Original file but has labels
-                 display_name += " [Original with Labels]"
-            else: # Original file, no labels, not processed (less ideal for SVM)
-                 display_name += " [Original]"
-            file_options[display_name] = {'id': id, 'path': path, 'is_processed': processed, 'has_labels': labels}
+        file_options_analysis = {}
+        for record in files_for_analysis:
+            id_f, name_f, path_f, processed_f = record # has_sentiment_labels is TRUE for all these records
+            display_name = f"{name_f} (ID: {id_f})"
+            tag = "[Processed]" if processed_f else "[Original with Labels]"
+            display_name_with_tag = f"{display_name} {tag}"
+            file_options_analysis[display_name_with_tag] = {'id': id_f, 'path': path_f, 'is_processed': processed_f}
 
-        selected_file_display_name = st.selectbox("Pilih file untuk analisis sentimen:", file_options.keys())
+        selected_file_display_name_analysis = st.selectbox("Pilih file untuk analisis sentimen:", file_options_analysis.keys())
         
-        selected_file_info = file_options[selected_file_display_name]
-        selected_file_path = selected_file_info['path']
-
-        # Determine the text column to use
-        if selected_file_info['is_processed']:
-            text_col_default = 'processed_text'
-            st.info("File ini tampaknya sudah diproses. Kolom 'processed_text' akan digunakan secara default.")
-        else:
-            text_col_default = 'text'
-            st.warning("File ini belum diproses. Hasil SVM mungkin lebih baik dengan teks yang sudah dibersihkan. Kolom 'text' akan digunakan.")
-
-        col1, col2 = st.columns(2)
-        with col1:
-            text_column_for_svm = st.text_input("Nama kolom teks untuk TF-IDF:", text_col_default)
-        with col2:
-            label_column_for_svm = st.text_input("Nama kolom label sentimen (mis: 'sentiment', 'label'):", "sentiment")
-
-        test_size_svm = st.slider("Ukuran Test Set (mis: 0.2 untuk 20%):", 0.1, 0.5, 0.2, 0.05)
-
         if st.button("🚀 Lakukan Analisis Sentimen dengan SVM"):
-            if not selected_file_path:
-                st.warning("Silakan pilih file.")
+            if not selected_file_display_name_analysis:
+                st.error("File belum dipilih.") # Seharusnya tidak terjadi jika options ada
                 st.stop()
-            if not text_column_for_svm or not label_column_for_svm:
-                st.error("Nama kolom teks dan kolom label harus diisi.")
-                st.stop()
+
+            selected_file_info = file_options_analysis[selected_file_display_name_analysis]
+            selected_file_path = selected_file_info['path']
+            
+            # --- OTOMATIS TENTUKAN KOLOM TEKS ---
+            if selected_file_info['is_processed']:
+                text_column_for_svm = 'processed_text'
+                st.info(f"Menggunakan kolom teks: '{text_column_for_svm}' (File sudah diproses).")
+            else:
+                text_column_for_svm = 'text' # Default untuk file asli
+                st.info(f"Menggunakan kolom teks: '{text_column_for_svm}' (File asli). Hasil mungkin lebih baik jika file diproses terlebih dahulu.")
+            
+            # --- UKURAN TEST SET DEFAULT ---
+            test_size_svm = 0.2
+            st.info(f"Menggunakan ukuran test set: {int(test_size_svm*100)}%")
 
             try:
-                # Load the selected file
+                data_for_svm = None
                 if selected_file_path.endswith('.csv'):
                     data_for_svm = pd.read_csv(selected_file_path)
                 elif selected_file_path.endswith('.xlsx'):
@@ -305,50 +292,53 @@ elif choice == "Hasil Analisis (SVM + TF-IDF)":
                     st.error("Format file tidak didukung.")
                     st.stop()
 
+                if data_for_svm is None or data_for_svm.empty:
+                    st.error("Gagal memuat data atau data kosong.")
+                    st.stop()
+
                 if text_column_for_svm not in data_for_svm.columns:
-                    st.error(f"Kolom teks '{text_column_for_svm}' tidak ditemukan dalam file.")
+                    st.error(f"Kolom teks yang ditentukan otomatis '{text_column_for_svm}' tidak ditemukan. Harap periksa file atau logika preprocessing.")
                     st.info(f"Kolom yang tersedia: {', '.join(data_for_svm.columns.tolist())}")
                     st.stop()
-                if label_column_for_svm not in data_for_svm.columns:
-                    st.error(f"Kolom label '{label_column_for_svm}' tidak ditemukan.")
+                
+                # --- OTOMATIS TENTUKAN KOLOM LABEL ---
+                potential_label_columns = ['sentiment', 'label', 'sentimen', 'kelas'] 
+                label_column_for_svm = None
+                for col_name in potential_label_columns:
+                    if col_name in data_for_svm.columns:
+                        label_column_for_svm = col_name
+                        st.info(f"Kolom label sentimen yang terdeteksi dan digunakan: '{label_column_for_svm}'")
+                        break
+                
+                if label_column_for_svm is None:
+                    st.error(f"Tidak dapat menemukan kolom label sentimen yang cocok ({', '.join(potential_label_columns)}) pada file yang dipilih. Proses analisis dibatalkan.")
                     st.info(f"Kolom yang tersedia: {', '.join(data_for_svm.columns.tolist())}")
                     st.stop()
 
-                # Drop rows with NaN in text or label column
                 data_for_svm.dropna(subset=[text_column_for_svm, label_column_for_svm], inplace=True)
-                
                 if data_for_svm.empty:
                     st.error("Data kosong setelah menghapus baris dengan nilai NaN pada kolom teks atau label.")
                     st.stop()
 
-                # Ensure labels are strings for consistent mapping later
                 data_for_svm[label_column_for_svm] = data_for_svm[label_column_for_svm].astype(str)
-                
-                X = data_for_svm[text_column_for_svm].astype(str) # Ensure text is string
+                X = data_for_svm[text_column_for_svm].astype(str) 
                 y = data_for_svm[label_column_for_svm]
 
-                # Check if there's enough data and enough classes
                 if len(X) < 2 or len(y.unique()) < 2:
                     st.error("Data tidak cukup atau hanya ada satu kelas sentimen. SVM memerlukan setidaknya 2 sampel dan 2 kelas berbeda untuk training.")
                     st.stop()
                 
                 with st.spinner("Melatih model SVM dengan TF-IDF... Ini mungkin memerlukan waktu."):
-                    # Split data
                     try:
                         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size_svm, random_state=42, stratify=y)
-                    except ValueError as e:
-                         # If stratification fails (e.g. too few samples per class for split)
-                        st.warning(f"Stratifikasi gagal: {e}. Mencoba split tanpa stratifikasi.")
+                    except ValueError as e_split:
+                        st.warning(f"Stratifikasi gagal: {e_split}. Mencoba split tanpa stratifikasi.")
                         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size_svm, random_state=42)
 
-
-                    # Create a pipeline: TF-IDF -> SVM
-                    # You can tune parameters of TfidfVectorizer and SVC
                     pipeline_svm = Pipeline([
-                        ('tfidf', TfidfVectorizer(max_features=5000, ngram_range=(1,2))), # Consider tuning parameters
-                        ('svm', SVC(kernel='linear', C=1, probability=True, random_state=42)) # Linear kernel is often good for text
+                        ('tfidf', TfidfVectorizer(max_features=5000, ngram_range=(1,2))), 
+                        ('svm', SVC(kernel='linear', C=1, probability=True, random_state=42)) 
                     ])
-
                     pipeline_svm.fit(X_train, y_train)
                     y_pred = pipeline_svm.predict(X_test)
 
@@ -357,60 +347,50 @@ elif choice == "Hasil Analisis (SVM + TF-IDF)":
                 st.write(f"🎯 **Akurasi Model:** {accuracy:.4f}")
 
                 st.text("📝 **Laporan Klasifikasi:**")
-                report = classification_report(y_test, y_pred, zero_division=0) # Added zero_division
-                st.text(report)
+                unique_labels_report = sorted(y.unique()) # Gunakan label dari keseluruhan y untuk konsistensi
+                report_str = classification_report(y_test, y_pred, zero_division=0, labels=unique_labels_report, target_names=unique_labels_report) 
+                st.text(report_str)
                 
-                # Store predictions for display
-                # Create a DataFrame for easier display of test results
                 results_df = pd.DataFrame({
                     'Teks Asli (dari X_test)': X_test,
                     f'Label Asli ({label_column_for_svm})': y_test,
                     'Prediksi Sentimen': y_pred
                 })
-                
                 st.subheader("Contoh Hasil Prediksi pada Data Uji:")
                 st.dataframe(results_df.head(10))
 
                 st.subheader("📊 Distribusi Sentimen (Hasil Prediksi pada Data Uji)")
-                
-                # Ensure consistent order for plotting if possible
-                unique_labels_sorted = sorted(y.unique())
-
+                unique_labels_plot = sorted(y.unique()) # Gunakan label dari keseluruhan y
                 fig, ax = plt.subplots(figsize=(10, 6))
-                # Count occurrences of each predicted sentiment
-                # Use pd.Series on y_pred to use value_counts()
-                sentiment_counts_pred = pd.Series(y_pred).value_counts().reindex(unique_labels_sorted, fill_value=0)
-                
-                sns.barplot(x=sentiment_counts_pred.index, y=sentiment_counts_pred.values, ax=ax, order=unique_labels_sorted, palette="viridis")
+                sentiment_counts_pred = pd.Series(y_pred).value_counts().reindex(unique_labels_plot, fill_value=0)
+                sns.barplot(x=sentiment_counts_pred.index, y=sentiment_counts_pred.values, ax=ax, order=unique_labels_plot, palette="viridis")
                 ax.set_title('Distribusi Sentimen Hasil Prediksi SVM')
                 ax.set_xlabel('Sentimen')
                 ax.set_ylabel('Jumlah')
                 plt.xticks(rotation=45)
                 st.pyplot(fig)
 
-                # Confusion Matrix
                 st.subheader("Matriks Konfusi")
-                cm = confusion_matrix(y_test, y_pred, labels=unique_labels_sorted)
+                cm = confusion_matrix(y_test, y_pred, labels=unique_labels_plot)
                 fig_cm, ax_cm = plt.subplots(figsize=(8, 6))
                 sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                            xticklabels=unique_labels_sorted, yticklabels=unique_labels_sorted, ax=ax_cm)
+                            xticklabels=unique_labels_plot, yticklabels=unique_labels_plot, ax=ax_cm)
                 ax_cm.set_xlabel('Predicted Labels')
                 ax_cm.set_ylabel('True Labels')
                 ax_cm.set_title('Confusion Matrix')
                 st.pyplot(fig_cm)
-
 
             except pd.errors.EmptyDataError:
                 st.error("File yang dipilih kosong atau format tidak sesuai.")
             except FileNotFoundError:
                 st.error(f"File tidak ditemukan di path: {selected_file_path}. Harap periksa database atau unggah ulang.")
             except KeyError as e:
-                st.error(f"Kolom '{e}' tidak ditemukan. Pastikan nama kolom teks dan label benar.")
+                st.error(f"Kolom '{e}' tidak ditemukan. Pastikan nama kolom teks dan label benar atau terdeteksi otomatis.")
             except ValueError as e:
                 st.error(f"ValueError: {e}. Ini bisa terjadi jika data tidak cukup untuk splitting atau kelas tidak seimbang.")
             except Exception as e:
                 st.error(f"Terjadi kesalahan saat analisis: {e}")
                 st.error(f"Detail Kesalahan: Type: {type(e).__name__}, Arguments: {e.args}")
-
+                
 # --- Close database connection when app stops (optional, Streamlit handles it) ---
 # conn.close() # Usually not explicitly needed in Streamlit as scripts rerun
