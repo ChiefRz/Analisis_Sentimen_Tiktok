@@ -156,7 +156,7 @@ elif choice == "Preprocessing Data":
                     @st.cache_data # Cache the expensive stemming process
                     def preprocess_text_sastrawi(text):
                         if not isinstance(text, str):
-                            return "" # Return empty string for non-string inputs
+                            return "", [] # Return empty string and empty list for non-string inputs
                         text = text.lower() # Lowercasing
                         text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE) # Remove URLs
                         text = re.sub(r'\@\w+|\#','', text) # Remove mentions and hashtags
@@ -170,19 +170,26 @@ elif choice == "Preprocessing Data":
                         # Stemming with Sastrawi
                         stemmed_tokens = [stemmer.stem(token) for token in tokens]
                         
-                        stop_words = set(stopwords.words('indonesian'))
-                        filtered_tokens = [word for word in stemmed_tokens if word not in stop_words and len(word) > 2] # Remove stopwords and short words
-                        return ' '.join(filtered_tokens)
+                        stop_words_list = set(stopwords.words('indonesian')) # Ganti nama variabel agar tidak bentrok
+                        filtered_tokens = [word for word in stemmed_tokens if word not in stop_words_list and len(word) > 2] # Remove stopwords and short words
+                        
+                        # Kembalikan string yang sudah diproses DAN daftar token yang sudah difilter
+                        return ' '.join(filtered_tokens), filtered_tokens
 
                     with st.spinner("Sedang melakukan preprocessing... Ini mungkin memakan waktu."):
-                        data['processed_text'] = data[text_column].apply(preprocess_text_sastrawi)
+                        # Terapkan fungsi dan dapatkan dua hasil
+                        preprocessing_results = data[text_column].apply(preprocess_text_sastrawi)
+                        # Pisahkan hasil menjadi dua kolom baru
+                        data['processed_text'] = preprocessing_results.apply(lambda x: x[0])
+                        data['tokens_sastrawi'] = preprocessing_results.apply(lambda x: x[1]) # Kolom baru untuk token
                     
                     st.session_state.processed_data = data.copy() # Store processed data
 
                     st.subheader("Data Setelah Diproses:")
-                    st.dataframe(data[[text_column, 'processed_text']].head())
+                    # Tampilkan kolom teks asli, teks yang sudah diproses, dan tokennya
+                    st.dataframe(data[[text_column, 'processed_text', 'tokens_sastrawi']].head())
 
-                    st.subheader("Statistik Dasar dari Teks yang Diproses:")
+                    st.subheader("Statistik Dasar dari Teks yang Diproses (Kolom 'processed_text'):")
                     st.write(data['processed_text'].describe())
 
                     # Save processed data
@@ -191,17 +198,36 @@ elif choice == "Preprocessing Data":
                     processed_file_path = os.path.join("uploads", processed_file_name)
                     
                     # Ensure all original columns are carried over, especially potential label columns
+                    # Kolom 'tokens_sastrawi' juga akan tersimpan karena sudah menjadi bagian dari DataFrame 'data'
                     data.to_csv(processed_file_path, index=False)
 
-                    # Update database for the original file entry
-                    c.execute("UPDATE files SET has_processed_text = TRUE WHERE id = ?", (selected_file_id,))
-                    # Add the new processed file to the database
-                    has_sentiment_col_processed = any(col in data.columns for col in ['sentiment', 'label', 'sentimen'])
-                    c.execute("INSERT INTO files (filename, filepath, has_processed_text, has_sentiment_labels) VALUES (?, ?, ?, ?)",
-                              (processed_file_name, processed_file_path, True, has_sentiment_col_processed )) # <--- DIPERBAIKI DI SINI
+                    # Update database untuk file asli atau tambahkan entri baru untuk file yang diproses
+                    # (Logika ini perlu disesuaikan jika Anda ingin file yang diproses menimpa atau hanya menambah)
+                    # Untuk contoh ini, kita asumsikan file yang diproses adalah entri baru
+                    # dan file asli tidak diubah status 'has_processed_text' nya jika Anda ingin bisa memprosesnya ulang.
+                    # Atau, Anda bisa menandai file asli sebagai sudah diproses.
+                    
+                    # Di sini saya akan mengupdate entri file asli
+                    c.execute("UPDATE files SET has_processed_text = ? WHERE id = ?", (True, selected_file_id))
+                    conn.commit()
+                    
+                    # Dan menambahkan entri baru untuk file yang sudah diproses
+                    # (agar bisa dipilih secara eksplisit di tahap analisis jika diperlukan)
+                    # Cek jika file dengan nama yang sama sudah ada
+                    c.execute("SELECT id FROM files WHERE filename = ?", (processed_file_name,))
+                    existing_processed_file = c.fetchone()
+                    if existing_processed_file:
+                        # Update entri yang sudah ada jika diperlukan
+                        c.execute("UPDATE files SET filepath = ?, has_processed_text = ?, has_sentiment_labels = ? WHERE id = ?",
+                                  (processed_file_path, True, any(col in data.columns for col in ['sentiment', 'label', 'sentimen']), existing_processed_file[0]))
+                    else:
+                        # Insert entri baru
+                        c.execute("INSERT INTO files (filename, filepath, has_processed_text, has_sentiment_labels) VALUES (?, ?, ?, ?)",
+                                  (processed_file_name, processed_file_path, True, any(col in data.columns for col in ['sentiment', 'label', 'sentimen'])))
                     conn.commit()
                     
                     st.success(f"Data yang telah diproses disimpan sebagai '{processed_file_name}' dan metadata diperbarui di database.")
+                    st.info("Kolom 'tokens_sastrawi' yang berisi hasil tokenisasi juga telah ditambahkan dan disimpan.")
                     st.info("Anda sekarang dapat menggunakan file yang telah diproses ini di bagian 'Hasil Analisis'.")
 
                 except pd.errors.EmptyDataError:
