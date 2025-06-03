@@ -42,7 +42,7 @@ except LookupError:
 
 # --- Database Setup ---
 DB_NAME = 'data_files_svm_app.db' # Use a new DB name or clear old one
-conn = sqlite3.connect(DB_NAME)
+conn = sqlite3.connect(DB_NAME, check_same_thread=False) # Added check_same_thread=False for Streamlit
 c = conn.cursor()
 c.execute('''
           CREATE TABLE IF NOT EXISTS files (
@@ -83,7 +83,7 @@ if 'app_data' not in st.session_state: # General container for app related data
 
 # --- Helper Functions ---
 @st.cache_data(ttl=3600) # Cache for 1 hour
-def load_data(file_path):
+def load_data_from_path(file_path): # Renamed to avoid conflict
     if file_path.endswith('.csv'):
         return pd.read_csv(file_path, on_bad_lines='skip')
     elif file_path.endswith('.xlsx'):
@@ -93,7 +93,7 @@ def load_data(file_path):
     return None
 
 @st.cache_data(ttl=3600)
-def preprocess_text_sastrawi(text):
+def _preprocess_text_sastrawi_cached(text, _sastrawi_stemmer): # Pass stemmer explicitly for caching
     if not isinstance(text, str):
         return "", []
     text = text.lower()
@@ -104,14 +104,15 @@ def preprocess_text_sastrawi(text):
     text = re.sub(r'\d+', '', text)
     text = text.strip()
     tokens = word_tokenize(text)
-    # Stemming with Sastrawi - this is the expensive part
-    stemmed_tokens_sastrawi = [_stemmer.stem(token) for token in tokens] # Access stemmer via _stemmer for caching
+    stemmed_tokens_sastrawi = [_sastrawi_stemmer.stem(token) for token in tokens]
     stop_words_list = set(stopwords.words('indonesian'))
     filtered_tokens = [word for word in stemmed_tokens_sastrawi if word not in stop_words_list and len(word) > 2]
     return ' '.join(filtered_tokens), filtered_tokens
 
-# Need to pass stemmer to the cached function, or make stemmer global and accessible
-_stemmer = stemmer # Global reference for cached function
+# Wrapper function to call the cached version with the global stemmer
+def preprocess_text_sastrawi(text):
+    return _preprocess_text_sastrawi_cached(text, stemmer)
+
 
 # --- Judul Aplikasi ---
 st.title("📱 Aplikasi Analisis Sentimen (TF-IDF & SVM)")
@@ -145,7 +146,7 @@ if choice == "1. Upload Data":
                 with open(file_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
 
-                data = load_data(file_path)
+                data = load_data_from_path(file_path) # Use renamed helper
 
                 if data is None or data.empty:
                     st.error("File yang diunggah kosong atau format tidak dikenal.")
@@ -160,13 +161,13 @@ if choice == "1. Upload Data":
                     st.write(f"**Jumlah Baris:** {data.shape[0]}, **Jumlah Kolom:** {data.shape[1]}")
                     st.info(f"Kolom yang terdeteksi: {', '.join(data.columns.tolist())}")
 
-                    # Initial check for common text and label columns
                     detected_text_col = None
-                    if 'text' in data.columns: detected_text_col = 'text'
-                    elif 'teks' in data.columns: detected_text_col = 'teks'
-                    elif 'review' in data.columns: detected_text_col = 'review'
-                    # Add more common text column names if needed
-
+                    common_text_cols = ['text', 'teks', 'review', 'tweet', 'komentar', 'ulasan']
+                    for col_name in common_text_cols:
+                        if col_name in data.columns:
+                            detected_text_col = col_name
+                            break
+                    
                     potential_label_cols = ['sentiment', 'label', 'sentimen', 'kelas']
                     detected_label_col = None
                     for col in potential_label_cols:
@@ -176,7 +177,6 @@ if choice == "1. Upload Data":
 
                     has_sentiment_col_flag = bool(detected_label_col)
 
-                    # Store file metadata in the database
                     try:
                         c.execute("INSERT INTO files (filename, filepath, has_sentiment_labels, original_text_column, label_column_name) VALUES (?, ?, ?, ?, ?)",
                                   (safe_filename, file_path, has_sentiment_col_flag, detected_text_col, detected_label_col))
@@ -185,11 +185,11 @@ if choice == "1. Upload Data":
                         if detected_text_col:
                             st.success(f"Kolom teks potensial terdeteksi: '{detected_text_col}'")
                         else:
-                            st.warning("Tidak ada kolom teks umum ('text', 'teks', 'review') yang terdeteksi. Anda perlu menentukannya pada tahap preprocessing.")
+                            st.warning(f"Tidak ada kolom teks umum ({', '.join(common_text_cols)}) yang terdeteksi. Anda perlu menentukannya pada tahap preprocessing jika berbeda.")
                         if has_sentiment_col_flag:
                             st.success(f"Kolom label sentimen potensial terdeteksi: '{detected_label_col}'")
                         else:
-                            st.warning("Tidak ada kolom label sentimen umum yang terdeteksi. Analisis SVM memerlukan kolom label.")
+                            st.warning(f"Tidak ada kolom label sentimen umum ({', '.join(potential_label_cols)}) yang terdeteksi. Analisis SVM memerlukan kolom label.")
 
                     except sqlite3.IntegrityError:
                         st.warning(f"File dengan nama '{safe_filename}' sudah ada di database. Jika ini file baru, ubah namanya. Jika file lama, Anda bisa memprosesnya ulang di menu Preprocessing.")
@@ -224,68 +224,74 @@ elif choice == "2. Preprocessing Data":
         options = {f"{file_rec[1]} (ID: {file_rec[0]})": file_rec for file_rec in unprocessed_files}
         selected_file_display_name = st.selectbox("Pilih file untuk preprocessing:", options.keys())
 
-        selected_file_record = options[selected_file_display_name]
-        default_text_col = selected_file_record[3] if selected_file_record[3] else "text" # Use detected or default
-        text_column_to_process = st.text_input("Masukkan nama kolom yang berisi teks:", default_text_col)
+        if selected_file_display_name: # Check if a file is selected
+            selected_file_record = options[selected_file_display_name]
+            default_text_col = selected_file_record[3] if selected_file_record[3] else "text"
+            text_column_to_process = st.text_input("Masukkan nama kolom yang berisi teks (jika berbeda dari deteksi awal):", default_text_col)
 
-        if st.button("🔄 Mulai Preprocessing"):
-            if not text_column_to_process:
-                st.error("Silakan masukkan nama kolom teks.")
-            else:
-                file_id, filename, filepath, _ = selected_file_record
-                st.session_state.app_data["data_to_preprocess_path"] = filepath
+            if st.button("🔄 Mulai Preprocessing"):
+                if not text_column_to_process:
+                    st.error("Silakan masukkan nama kolom teks.")
+                else:
+                    file_id, filename, filepath, _ = selected_file_record
+                    st.session_state.app_data["data_to_preprocess_path"] = filepath
 
-                try:
-                    data = load_data(filepath)
-                    if data is None or data.empty:
-                        st.error("Gagal memuat data atau file kosong.")
-                        st.stop()
+                    try:
+                        data = load_data_from_path(filepath) # Use renamed helper
+                        if data is None or data.empty:
+                            st.error("Gagal memuat data atau file kosong.")
+                            st.stop()
 
-                    st.session_state.app_data["data_to_preprocess_df"] = data.copy()
+                        st.session_state.app_data["data_to_preprocess_df"] = data.copy()
 
-                    if text_column_to_process not in data.columns:
-                        st.error(f"Kolom '{text_column_to_process}' tidak ditemukan dalam file. Kolom tersedia: {', '.join(data.columns.tolist())}")
-                        st.stop()
+                        if text_column_to_process not in data.columns:
+                            st.error(f"Kolom '{text_column_to_process}' tidak ditemukan dalam file. Kolom tersedia: {', '.join(data.columns.tolist())}")
+                            st.stop()
 
-                    st.write("**Data Asli (Sebelum Preprocessing):**")
-                    st.dataframe(data[[text_column_to_process]].head())
+                        st.write("**Data Asli (Sebelum Preprocessing):**")
+                        st.dataframe(data[[text_column_to_process]].head())
 
-                    with st.spinner("Sedang melakukan preprocessing... Ini mungkin memakan waktu."):
-                        preprocessing_results = data[text_column_to_process].apply(lambda x: preprocess_text_sastrawi(str(x)))
-                        data['processed_text'] = preprocessing_results.apply(lambda x: x[0])
-                        data['tokens_sastrawi'] = preprocessing_results.apply(lambda x: x[1])
+                        with st.spinner("Sedang melakukan preprocessing... Ini mungkin memakan waktu."):
+                            preprocessing_results = data[text_column_to_process].apply(lambda x: preprocess_text_sastrawi(str(x)))
+                            data['processed_text'] = preprocessing_results.apply(lambda x: x[0])
+                            data['tokens_sastrawi'] = preprocessing_results.apply(lambda x: x[1])
 
-                    st.session_state.app_data["preprocessed_data_df"] = data.copy()
+                        st.session_state.app_data["preprocessed_data_df"] = data.copy()
 
-                    st.subheader("Data Setelah Diproses:")
-                    st.dataframe(data[[text_column_to_process, 'processed_text', 'tokens_sastrawi']].head())
+                        st.subheader("Data Setelah Diproses:")
+                        st.dataframe(data[[text_column_to_process, 'processed_text', 'tokens_sastrawi']].head())
 
-                    original_filename_parts = os.path.splitext(os.path.basename(filepath))
-                    processed_file_name = f"{original_filename_parts[0]}_processed.csv"
-                    processed_file_path = os.path.join("uploads", processed_file_name)
+                        original_filename_parts = os.path.splitext(os.path.basename(filepath))
+                        processed_file_name = f"{original_filename_parts[0]}_processed.csv"
+                        processed_file_path = os.path.join("uploads", processed_file_name)
 
-                    data.to_csv(processed_file_path, index=False)
-                    st.session_state.app_data["preprocessed_data_path"] = processed_file_path
+                        data.to_csv(processed_file_path, index=False)
+                        st.session_state.app_data["preprocessed_data_path"] = processed_file_path
 
-                    # Update database: mark original as processed, add new entry for processed file
-                    c.execute("UPDATE files SET is_processed = ?, original_text_column = ? WHERE id = ?", (True, text_column_to_process, file_id))
-                    # Check if processed file already exists by name
-                    c.execute("SELECT id FROM files WHERE filename = ?", (processed_file_name,))
-                    existing_processed_file = c.fetchone()
-                    if existing_processed_file:
-                        c.execute("UPDATE files SET filepath = ?, is_processed = ?, has_sentiment_labels = (SELECT has_sentiment_labels FROM files WHERE id = ?), original_text_column = ?, label_column_name = (SELECT label_column_name FROM files WHERE id = ?) WHERE id = ?",
-                                  (processed_file_path, True, file_id, 'processed_text', file_id, existing_processed_file[0]))
-                    else:
-                        c.execute("INSERT INTO files (filename, filepath, is_processed, has_sentiment_labels, original_text_column, label_column_name) VALUES (?, ?, ?, (SELECT has_sentiment_labels FROM files WHERE id = ?), ?, (SELECT label_column_name FROM files WHERE id = ?))",
-                                  (processed_file_name, processed_file_path, True, file_id, 'processed_text', file_id))
-                    conn.commit()
+                        c.execute("UPDATE files SET is_processed = ?, original_text_column = ? WHERE id = ?", (True, text_column_to_process, file_id))
+                        
+                        # Retrieve original label column name and has_sentiment_labels status for the new processed file entry
+                        c.execute("SELECT has_sentiment_labels, label_column_name FROM files WHERE id = ?", (file_id,))
+                        original_file_meta = c.fetchone()
+                        has_sentiment_original = original_file_meta[0] if original_file_meta else False
+                        label_col_original = original_file_meta[1] if original_file_meta else None
 
-                    st.success(f"Data yang telah diproses disimpan sebagai '{processed_file_name}'.")
-                    st.info("Anda sekarang dapat menggunakan file ini di menu 'Processing Data'.")
+                        c.execute("SELECT id FROM files WHERE filename = ?", (processed_file_name,))
+                        existing_processed_file = c.fetchone()
+                        if existing_processed_file:
+                            c.execute("UPDATE files SET filepath = ?, is_processed = ?, has_sentiment_labels = ?, original_text_column = ?, label_column_name = ? WHERE id = ?",
+                                      (processed_file_path, True, has_sentiment_original, 'processed_text', label_col_original, existing_processed_file[0]))
+                        else:
+                            c.execute("INSERT INTO files (filename, filepath, is_processed, has_sentiment_labels, original_text_column, label_column_name) VALUES (?, ?, ?, ?, ?, ?)",
+                                      (processed_file_name, processed_file_path, True, has_sentiment_original, 'processed_text', label_col_original))
+                        conn.commit()
 
-                except Exception as e:
-                    st.error(f"Terjadi kesalahan saat preprocessing: {e}")
-                    st.error(f"Detail: {type(e).__name__}, {e.args}")
+                        st.success(f"Data yang telah diproses disimpan sebagai '{processed_file_name}'.")
+                        st.info("Anda sekarang dapat menggunakan file ini di menu 'Processing Data'.")
+
+                    except Exception as e:
+                        st.error(f"Terjadi kesalahan saat preprocessing: {e}")
+                        st.error(f"Detail: {type(e).__name__}, {e.args}")
 
 elif choice == "3. Processing Data (TF-IDF & SVM)":
     st.header("⚙️ 3. Processing Data (TF-IDF & SVM)")
@@ -305,7 +311,7 @@ elif choice == "3. Processing Data (TF-IDF & SVM)":
         if processed_f: tags.append("Telah Diproses")
         else: tags.append("Asli (Belum Diproses)")
         if has_label_f and lbl_col: tags.append(f"Label: '{lbl_col}'")
-        elif has_label_f: tags.append("Ada Label (Tidak Terdeteksi Nama Kolomnya)")
+        elif has_label_f: tags.append("Ada Label (Nama Kolom ?)")
         else: tags.append("Tanpa Label Terdeteksi")
 
         display_name_with_tag = f"{display_name} [{', '.join(tags)}]"
@@ -315,73 +321,122 @@ elif choice == "3. Processing Data (TF-IDF & SVM)":
         "Pilih file untuk analisis sentimen:",
         file_options_analysis.keys()
     )
+    
+    text_col_svm = None
+    label_col_svm = None
+    data_svm_loaded_successfully = False
 
-    selected_record_for_analysis = file_options_analysis[selected_file_display_name_analysis]
-    file_id_an, filename_an, filepath_an, is_proc_an, has_lbl_an, orig_txt_col_an, lbl_col_an = selected_record_for_analysis
+    if selected_file_display_name_analysis:
+        selected_record_for_analysis = file_options_analysis[selected_file_display_name_analysis]
+        file_id_an, filename_an, filepath_an, is_proc_an, has_lbl_an, orig_txt_col_an, lbl_col_an = selected_record_for_analysis
+        
+        # --- Otomatisasi Penentuan Kolom Teks ---
+        data_svm = load_data_from_path(filepath_an) # Load data once for column checks
 
-    # Determine text column
-    if is_proc_an:
-        default_text_col_an = 'processed_text'
-        st.info(f"File ini telah diproses. Kolom teks yang disarankan: '{default_text_col_an}'.")
-    else:
-        default_text_col_an = orig_txt_col_an if orig_txt_col_an else 'text'
-        st.warning(f"File ini belum diproses. Kolom teks yang disarankan (dari database atau default): '{default_text_col_an}'. Hasil optimal jika file diproses dulu.")
-
-    text_col_svm = st.text_input("Konfirmasi/masukkan nama kolom teks untuk SVM:", default_text_col_an)
-
-    # Determine label column
-    if has_lbl_an and lbl_col_an:
-        default_label_col_an = lbl_col_an
-        st.info(f"Kolom label yang terdeteksi dari database: '{default_label_col_an}'.")
-    else:
-        # Try to auto-detect again if not in DB record
-        temp_df_for_cols = load_data(filepath_an)
-        potential_label_cols_runtime = ['sentiment', 'label', 'sentimen', 'kelas']
-        detected_label_col_runtime = None
-        if temp_df_for_cols is not None:
-            for col_rt in potential_label_cols_runtime:
-                if col_rt in temp_df_for_cols.columns:
-                    detected_label_col_runtime = col_rt
-                    break
-        default_label_col_an = detected_label_col_runtime if detected_label_col_runtime else "sentiment"
-        if detected_label_col_runtime:
-            st.info(f"Kolom label yang terdeteksi saat ini: '{detected_label_col_runtime}'.")
+        if data_svm is None or data_svm.empty:
+            st.error(f"Gagal memuat data atau file '{filename_an}' kosong.")
         else:
-            st.warning("Tidak ada kolom label terdeteksi secara otomatis. Masukkan secara manual.")
+            data_svm_loaded_successfully = True
+            if is_proc_an:
+                if 'processed_text' in data_svm.columns:
+                    text_col_svm = 'processed_text'
+                    st.info(f"Menggunakan kolom teks yang telah diproses: '{text_col_svm}' dari file '{filename_an}'.")
+                else:
+                    st.error(f"File '{filename_an}' ditandai telah diproses, tetapi kolom 'processed_text' tidak ditemukan.")
+            else: # File belum diproses
+                if orig_txt_col_an and orig_txt_col_an in data_svm.columns:
+                    text_col_svm = orig_txt_col_an
+                    st.info(f"Menggunakan kolom teks dari database: '{text_col_svm}' dari file '{filename_an}'.")
+                else:
+                    common_text_cols_analysis = ['text', 'teks', 'review', 'tweet', 'komentar', 'ulasan']
+                    for col_name in common_text_cols_analysis:
+                        if col_name in data_svm.columns:
+                            text_col_svm = col_name
+                            st.info(f"Kolom teks terdeteksi otomatis: '{text_col_svm}' dari file '{filename_an}'.")
+                            break
+                if not text_col_svm:
+                    st.error(f"Tidak dapat menentukan kolom teks secara otomatis untuk file '{filename_an}'. Pastikan file memiliki kolom teks yang sesuai atau perbarui metadata di database.")
+            
+            if not is_proc_an and text_col_svm:
+                 st.warning(f"File '{filename_an}' belum diproses. Untuk hasil optimal, disarankan untuk memproses file terlebih dahulu melalui menu '2. Preprocessing Data'.")
 
-    label_col_svm = st.text_input("Konfirmasi/masukkan nama kolom label untuk SVM:", default_label_col_an)
 
-    st.subheader("Parameter Model SVM")
-    test_size_svm = st.slider("Ukuran data testing (misal: 0.2 untuk 20%)", 0.1, 0.5, 0.2, 0.05, key="svm_test_size")
-    svm_kernel = st.selectbox("Kernel SVM:", ('linear', 'rbf', 'poly', 'sigmoid'), key="svm_kernel_select")
-    svm_c = st.number_input("Parameter C (Regularization):", value=1.0, min_value=0.01, format="%.2f", key="svm_c_val")
-    if svm_kernel in ['rbf', 'poly', 'sigmoid']:
-        svm_gamma = st.select_slider("Parameter Gamma:", options=['scale', 'auto', 0.001, 0.01, 0.1, 1], value='scale', key="svm_gamma_val")
+            # --- Otomatisasi Penentuan Kolom Label ---
+            if has_lbl_an and lbl_col_an and lbl_col_an in data_svm.columns:
+                label_col_svm = lbl_col_an
+                st.info(f"Menggunakan kolom label dari database: '{label_col_svm}'.")
+            elif has_lbl_an: # has_sentiment_labels is true but column name might be missing or incorrect in DB
+                potential_label_cols_analysis = ['sentiment', 'label', 'sentimen', 'kelas']
+                for col in potential_label_cols_analysis:
+                    if col in data_svm.columns:
+                        label_col_svm = col
+                        st.info(f"Kolom label terdeteksi otomatis: '{label_col_svm}'.")
+                        # Optionally, update DB here if lbl_col_an was missing/wrong
+                        # c.execute("UPDATE files SET label_column_name = ? WHERE id = ?", (label_col_svm, file_id_an))
+                        # conn.commit()
+                        break
+                if not label_col_svm: # Still not found even if DB said has_label
+                     st.error(f"Metadata file '{filename_an}' mengindikasikan ada label, tetapi kolom label ({', '.join(potential_label_cols_analysis)}) tidak dapat ditemukan di file. Periksa file atau metadata.")
+            elif not has_lbl_an and not label_col_svm : # No label indicated by DB, try one last detection
+                potential_label_cols_analysis = ['sentiment', 'label', 'sentimen', 'kelas']
+                for col in potential_label_cols_analysis:
+                    if col in data_svm.columns:
+                        label_col_svm = col
+                        st.warning(f"Kolom label terdeteksi otomatis: '{label_col_svm}'. Database tidak mengindikasikan adanya label sebelumnya untuk file ini.")
+                        # Optionally, update DB here
+                        # c.execute("UPDATE files SET has_sentiment_labels = TRUE, label_column_name = ? WHERE id = ?", (label_col_svm, file_id_an))
+                        # conn.commit()
+                        break
+
+            if not label_col_svm:
+                st.error(f"Kolom label tidak dapat ditentukan untuk file '{filename_an}'. Analisis SVM memerlukan kolom label. Pastikan file Anda memiliki kolom label yang sesuai atau perbarui metadata.")
+
+    # Default SVM parameters
+    default_test_size = 0.2
+    default_kernel = 'linear'
+    default_c = 1.0
+    default_gamma = 'scale'
+
+    with st.expander("🔧 Atur Parameter Model SVM (Opsional)"):
+        test_size_svm = st.slider("Ukuran data testing", 0.1, 0.5, default_test_size, 0.05, key="svm_test_size_adv")
+        svm_kernel = st.selectbox("Kernel SVM", ('linear', 'rbf', 'poly', 'sigmoid'), index=['linear', 'rbf', 'poly', 'sigmoid'].index(default_kernel), key="svm_kernel_select_adv")
+        svm_c = st.number_input("Parameter C (Regularization)", value=default_c, min_value=0.01, format="%.2f", key="svm_c_val_adv")
+        if svm_kernel in ['rbf', 'poly', 'sigmoid']:
+            svm_gamma = st.select_slider("Parameter Gamma", options=['scale', 'auto', 0.001, 0.01, 0.1, 1], value=default_gamma, key="svm_gamma_val_adv")
+        else:
+            svm_gamma = default_gamma # Default for linear
+    
+    # Use defaults if expander is not used or keep advanced settings
+    # For simplicity in this refactor, we'll directly use the widget values,
+    # which will hold defaults if expander isn't touched.
+    current_test_size = st.session_state.get("svm_test_size_adv", default_test_size)
+    current_kernel = st.session_state.get("svm_kernel_select_adv", default_kernel)
+    current_c = st.session_state.get("svm_c_val_adv", default_c)
+    if current_kernel in ['rbf', 'poly', 'sigmoid']:
+        current_gamma = st.session_state.get("svm_gamma_val_adv", default_gamma)
     else:
-        svm_gamma = 'scale' # Default for linear
+        current_gamma = default_gamma
+
 
     if st.button("🚀 Latih Model SVM & Prediksi"):
+        if not data_svm_loaded_successfully:
+            st.error("Data belum berhasil dimuat. Pilih file yang valid.")
+            st.stop()
         if not text_col_svm or not label_col_svm:
-            st.error("Nama kolom teks dan label tidak boleh kosong.")
+            st.error("Kolom teks atau label belum dapat ditentukan. Periksa pesan di atas.")
             st.stop()
 
         try:
-            data_svm = load_data(filepath_an)
-            if data_svm is None or data_svm.empty:
-                st.error("Gagal memuat data atau data kosong.")
-                st.stop()
-
+            # data_svm is already loaded for column checks
             st.session_state.app_data["data_for_analysis_path"] = filepath_an
-            st.session_state.app_data["data_for_analysis_df"] = data_svm.copy()
+            st.session_state.app_data["data_for_analysis_df"] = data_svm.copy() # Use the already loaded df
             st.session_state.app_data["text_column_for_analysis"] = text_col_svm
             st.session_state.app_data["label_column_for_analysis"] = label_col_svm
 
-            if text_col_svm not in data_svm.columns:
-                st.error(f"Kolom teks '{text_col_svm}' tidak ditemukan. Kolom tersedia: {', '.join(data_svm.columns.tolist())}")
-                st.stop()
-            if label_col_svm not in data_svm.columns:
-                st.error(f"Kolom label '{label_col_svm}' tidak ditemukan. Kolom tersedia: {', '.join(data_svm.columns.tolist())}")
-                st.stop()
+            # Ensure columns exist (double check, though previous logic should catch it)
+            if text_col_svm not in data_svm.columns or label_col_svm not in data_svm.columns:
+                 st.error(f"Error kritis: Kolom teks ('{text_col_svm}') atau label ('{label_col_svm}') tidak ditemukan setelah pengecekan akhir.")
+                 st.stop()
 
             data_svm.dropna(subset=[text_col_svm, label_col_svm], inplace=True)
             if data_svm.empty:
@@ -397,17 +452,17 @@ elif choice == "3. Processing Data (TF-IDF & SVM)":
 
             with st.spinner("Melatih model SVM dengan TF-IDF..."):
                 try:
-                    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size_svm, random_state=42, stratify=y)
+                    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=current_test_size, random_state=42, stratify=y)
                 except ValueError as e_split:
                     st.warning(f"Stratifikasi gagal ({e_split}), mencoba split tanpa stratifikasi.")
-                    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size_svm, random_state=42)
+                    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=current_test_size, random_state=42)
 
                 st.session_state.app_data["X_train"], st.session_state.app_data["X_test"] = X_train, X_test
                 st.session_state.app_data["y_train"], st.session_state.app_data["y_test"] = y_train, y_test
 
                 model_pipeline = Pipeline([
-                    ('tfidf', TfidfVectorizer(max_features=5000, ngram_range=(1,2))), # Parameter bisa disesuaikan
-                    ('svm', SVC(kernel=svm_kernel, C=svm_c, gamma=svm_gamma, probability=True, random_state=42))
+                    ('tfidf', TfidfVectorizer(max_features=5000, ngram_range=(1,2))),
+                    ('svm', SVC(kernel=current_kernel, C=current_c, gamma=current_gamma, probability=True, random_state=42))
                 ])
                 model_pipeline.fit(X_train, y_train)
                 y_pred = model_pipeline.predict(X_test)
@@ -416,8 +471,12 @@ elif choice == "3. Processing Data (TF-IDF & SVM)":
                 st.session_state.app_data["y_pred"] = y_pred
 
                 accuracy = accuracy_score(y_test, y_pred)
-                report_dict = classification_report(y_test, y_pred, output_dict=True, zero_division=0, labels=sorted(y.unique()))
-                cm_data = confusion_matrix(y_test, y_pred, labels=sorted(y.unique()))
+                # Ensure labels for classification report are from the actual unique values in y_test and y_pred combined
+                # or from y.unique() if that's more representative of all possible labels. Model's classes_ is best.
+                unique_labels_for_report = sorted(list(set(y_train.unique()) | set(y_test.unique()))) #model_pipeline.classes_
+                
+                report_dict = classification_report(y_test, y_pred, output_dict=True, zero_division=0, labels=unique_labels_for_report, target_names=unique_labels_for_report)
+                cm_data = confusion_matrix(y_test, y_pred, labels=unique_labels_for_report)
 
                 st.session_state.app_data["accuracy"] = accuracy
                 st.session_state.app_data["classification_report_dict"] = report_dict
@@ -425,14 +484,13 @@ elif choice == "3. Processing Data (TF-IDF & SVM)":
 
             st.success("Model SVM berhasil dilatih!")
             st.metric(label="Akurasi Model pada Data Uji", value=f"{accuracy:.4f}")
-
             st.info("Hasil evaluasi detail tersedia di menu '4. Visualisasi Hasil'.")
 
             st.subheader("🧪 Uji Model dengan Teks Baru")
             new_text_input = st.text_area("Masukkan teks untuk diprediksi sentimennya:")
             if st.button("Prediksi Teks Baru"):
                 if new_text_input and st.session_state.app_data["model_pipeline"]:
-                    processed_new_text, _ = preprocess_text_sastrawi(new_text_input) # Gunakan fungsi preprocessing yang sama
+                    processed_new_text, _ = preprocess_text_sastrawi(new_text_input)
                     prediction = st.session_state.app_data["model_pipeline"].predict([processed_new_text])
                     prediction_proba = st.session_state.app_data["model_pipeline"].predict_proba([processed_new_text])
 
@@ -447,11 +505,9 @@ elif choice == "3. Processing Data (TF-IDF & SVM)":
                     st.warning("Masukkan teks terlebih dahulu.")
                 else:
                     st.warning("Model belum dilatih.")
-
-
         except Exception as e:
             st.error(f"Terjadi kesalahan saat processing: {e}")
-            st.error(f"Detail: Type: {type(e).__name__}, Arguments: {e.args}")
+            st.error(f"Detail Error - Tipe: {type(e).__name__}, Pesan: {e}")
 
 
 elif choice == "4. Visualisasi Hasil":
@@ -480,6 +536,7 @@ elif choice == "4. Visualisasi Hasil":
         st.subheader("Matriks Konfusi (Confusion Matrix):")
         if cm_data is not None:
             fig_cm, ax_cm = plt.subplots(figsize=(8, 6))
+            # Use model_classes which are derived from training data y values for consistency
             sns.heatmap(cm_data, annot=True, fmt='d', cmap='Blues',
                         xticklabels=model_classes, yticklabels=model_classes, ax=ax_cm)
             ax_cm.set_xlabel("Predicted Label")
@@ -526,7 +583,7 @@ elif choice == "4. Visualisasi Hasil":
 # --- Informasi Tambahan ---
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "Aplikasi Analisis Sentimen v1.1\n\n"
+    "Aplikasi Analisis Sentimen v1.2\n\n"
     "Pastikan file data Anda memiliki kolom teks dan kolom label sentimen yang jelas."
 )
 
