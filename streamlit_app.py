@@ -490,4 +490,45 @@ elif choice == "4. Visualisasi Hasil":
             st.write("Tidak ada confusion matrix untuk ditampilkan.")
 
         st.subheader("Contoh Hasil Prediksi pada Data Uji (10 Sampel Teratas):")
-        if X_test_vis is not None
+        if X_test_vis is not None and y_test_vis is not None and y_pred_vis is not None:
+            results_df_vis = pd.DataFrame({
+                'Teks Uji': X_test_vis.head(10).values,
+                f'Label Asli ({label_col_name_vis})': y_test_vis.head(10).values,
+                'Prediksi Sentimen SVM': y_pred_vis[:10]
+            })
+            st.dataframe(results_df_vis, use_container_width=True)
+
+        st.subheader("Distribusi Sentimen (Hasil Prediksi pada Data Uji):")
+        if y_pred_vis is not None:
+            fig_dist_pred, ax_dist_pred = plt.subplots(figsize=(10, 6))
+            sentiment_counts_pred = pd.Series(y_pred_vis).value_counts().reindex(model_classes, fill_value=0)
+            sns.barplot(x=sentiment_counts_pred.index, y=sentiment_counts_pred.values, ax=ax_dist_pred, order=model_classes, palette="viridis")
+            ax_dist_pred.set_title('Distribusi Sentimen Hasil Prediksi SVM pada Data Uji')
+            ax_dist_pred.set_xlabel('Sentimen')
+            ax_dist_pred.set_ylabel('Jumlah')
+            plt.xticks(rotation=45)
+            st.pyplot(fig_dist_pred)
+
+        st.subheader("Distribusi Sentimen (Label Asli pada Data Uji):")
+        if y_test_vis is not None:
+            fig_dist_true, ax_dist_true = plt.subplots(figsize=(10, 6))
+            sentiment_counts_true = y_test_vis.value_counts().reindex(model_classes, fill_value=0)
+            sns.barplot(x=sentiment_counts_true.index, y=sentiment_counts_true.values, ax=ax_dist_true, order=model_classes, palette="coolwarm")
+            ax_dist_true.set_title('Distribusi Sentimen Label Asli pada Data Uji')
+            ax_dist_true.set_xlabel('Sentimen')
+            ax_dist_true.set_ylabel('Jumlah')
+            plt.xticks(rotation=45)
+            st.pyplot(fig_dist_true)
+
+    else:
+        st.warning("Silakan latih model SVM terlebih dahulu pada menu '3. Processing Data (TF-IDF & SVM)' untuk melihat visualisasi.")
+
+# --- Informasi Tambahan ---
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "Aplikasi Analisis Sentimen v1.1\n\n"
+    "Pastikan file data Anda memiliki kolom teks dan kolom label sentimen yang jelas."
+)
+
+# --- Close database connection (Streamlit generally handles this on script rerun) ---
+# conn.close()
