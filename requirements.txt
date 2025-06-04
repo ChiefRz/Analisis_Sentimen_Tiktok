@@ -6,3 +6,4 @@ Sastrawi==1.0.1
 scikit_learn==1.6.1
 seaborn==0.13.2
 streamlit==1.45.1
+transformers==4.52.4
