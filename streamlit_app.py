@@ -27,17 +27,44 @@ from transformers import pipeline as hf_pipeline
 st.set_page_config(page_title="Analisis Sentimen SVM Sederhana", layout="wide")
 
 # --- NLTK Resource Downloads ---
-@st.cache_resource
-def download_nltk_resources():
+@st.cache_resource  # Ensures this function's body runs only once per session
+def download_nltk_resources_once():
+    nltk_data_path_info = None
     try:
-        word_tokenize("test")
-    except LookupError:
-        nltk.download('punkt', quiet=True)
-    try:
-        stopwords.words('indonesian')
-    except LookupError:
-        nltk.download('stopwords', quiet=True)
-download_nltk_resources()
+        if nltk.data.path: # Get the primary NLTK data path for user info
+            nltk_data_path_info = nltk.data.path[0]
+    except Exception:
+        pass # Silently ignore if path cannot be retrieved
+
+    resources = {
+        "punkt": 'tokenizers/punkt',
+        "stopwords": 'corpora/stopwords'
+    }
+
+    for name, path in resources.items():
+        try:
+            nltk.data.find(path)
+            # Optional: For confirming it's found, uncomment next line
+            # st.sidebar.info(f"NLTK resource '{name}' found.")
+        except LookupError:
+            st.sidebar.info(f"NLTK resource '{name}' not found. Downloading... This might take a moment.")
+            if nltk_data_path_info:
+                st.sidebar.info(f"(Attempting to download to a path like: {nltk_data_path_info})")
+            else:
+                st.sidebar.info("(NLTK data path not identified, proceeding with download.)")
+            
+            try:
+                nltk.download(name) # Removed quiet=True for better error visibility
+                st.sidebar.info(f"NLTK resource '{name}' download attempt finished.")
+            except Exception as e:
+                st.sidebar.error(f"Error downloading NLTK resource '{name}': {e}")
+                st.sidebar.error(
+                    "Please ensure your environment has internet access and write permissions "
+                    "for the NLTK data directory. You might need to pre-download these resources "
+                    "if runtime downloads are failing."
+                )
+
+download_nltk_resources_once()
 
 # --- Database Setup ---
 DB_NAME = 'app_sentiment_data_simplified.db'
