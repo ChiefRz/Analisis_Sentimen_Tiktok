@@ -261,111 +261,139 @@ if choice == "1. Upload Data":
 # Sambungan dari kode yang Anda berikan sebelumnya...
 # Pastikan semua import, inisialisasi global (stemmer, pipeline HF, koneksi DB),
 # dan fungsi helper sudah ada di atas bagian ini.
+# Sambungan dari kode yang Anda berikan sebelumnya...
+# Pastikan semua import, inisialisasi global (stemmer, pipeline HF, koneksi DB),
+# dan fungsi helper sudah ada di atas bagian ini.
 
 elif choice == "2. Preprocessing Data":
     st.header("🧹 2. Preprocessing Data Teks")
 
-    # Option to load from session state if upload just happened
-    data_to_load_for_preprocessing = None
-    source_name = ""
-    current_text_col_for_pp = None # Akan diisi dari session state atau pilihan DB
+    options_for_preprocessing = {"Pilih data untuk diproses...": None}
+    # Untuk menyimpan detail setiap opsi agar mudah diakses setelah dipilih
+    source_details_map = {}
 
-    # Prioritaskan data yang baru saja diunggah dan dikonfirmasi
+    # Kandidat 1: Data yang baru diunggah (dari session state)
     if st.session_state.get('uploaded_file_info') and 'df' in st.session_state.uploaded_file_info:
         up_info = st.session_state.uploaded_file_info
-        st.info(f"Data yang baru diunggah: '{up_info['name']}' dengan kolom teks '{up_info['text_col']}'.")
-        if st.button("Gunakan Data Ini untuk Preprocessing", key="process_current_upload"):
-            data_to_load_for_preprocessing = up_info['df']
-            current_text_col_for_pp = up_info['text_col']
-            source_name = up_info['name']
-            # Simpan nama kolom teks yang akan diproses dari sumber ini
-            st.session_state.selected_text_col_preprocessing = current_text_col_for_pp
+        # Pastikan 'df' dan 'text_col' ada dan valid
+        if isinstance(up_info.get('df'), pd.DataFrame) and up_info.get('text_col'):
+            option_key_new = f"Data Baru Diunggah: {up_info['name']} (Kolom Teks: {up_info['text_col']})"
+            options_for_preprocessing[option_key_new] = "newly_uploaded"
+            source_details_map["newly_uploaded"] = {
+                'df': up_info['df'],
+                'text_col_suggestion': up_info['text_col'],
+                'original_filename': up_info['name'],
+                'source_type': 'newly_uploaded',
+                'db_id': up_info.get('id') # Jika ada ID dari DB
+            }
+        else: # Jika info tidak lengkap, tawarkan untuk re-upload atau pilih dari DB
+            st.warning("Informasi data yang baru diunggah tidak lengkap. Harap konfirmasi ulang di menu '1. Upload Data' atau pilih dari database.")
+            # Reset agar tidak terjebak
+            if st.button("Bersihkan Seleksi Data Baru Diunggah", key="clear_new_upload_for_pp"):
+                st.session_state.uploaded_file_info = None
+                st.rerun()
 
-    st.markdown("---")
-    st.subheader("Atau pilih file dari database untuk diproses (ulang):")
+
+    # Kandidat 2...N: File dari database
     try:
-        c.execute("SELECT id, filename, filepath, original_text_column FROM uploaded_files ORDER BY id DESC")
+        c.execute("SELECT id, filename, filepath, original_text_column FROM uploaded_files ORDER BY datetime_uploaded DESC")
         db_files = c.fetchall()
+        for rec in db_files:
+            db_id, filename_db, filepath_db, text_col_db_original = rec
+            option_key_db = f"Dari DB: {filename_db} (ID: {db_id}) - Kolom Teks Asli: {text_col_db_original or 'Belum Ditentukan'}"
+            options_for_preprocessing[option_key_db] = f"db_{db_id}" # Kunci unik untuk setiap file DB
+            source_details_map[f"db_{db_id}"] = {
+                'filepath': filepath_db, # Akan dimuat nanti jika dipilih
+                'text_col_suggestion': text_col_db_original,
+                'original_filename': filename_db,
+                'source_type': 'database_file',
+                'db_id': db_id,
+                'filename_hint_for_loader': filename_db # Untuk helper load_df
+            }
     except sqlite3.Error as e:
-        st.error(f"Tidak dapat mengakses database: {e}")
-        db_files = []
+        st.error(f"Tidak dapat mengakses database untuk memuat daftar file: {e}")
+        db_files = [] # Pastikan db_files terdefinisi
 
-
-    if not db_files and data_to_load_for_preprocessing is None:
-        st.warning("Tidak ada file di database atau data belum dikonfirmasi dari unggahan. Silakan unggah dan konfirmasi data terlebih dahulu di menu '1. Upload Data'.")
+    if len(options_for_preprocessing) == 1 and "Pilih data untuk diproses..." in options_for_preprocessing : # Hanya opsi default
+        st.warning("Tidak ada data yang tersedia untuk diproses. Silakan unggah dan konfirmasi file di menu '1. Upload Data'.")
     else:
-        # Buat opsi untuk selectbox hanya jika db_files tidak kosong
-        if db_files:
-            file_options_from_db = {f"{rec[1]} (ID: {rec[0]}) - Kolom Teks Asli: {rec[3] or 'Belum Ditentukan'}": rec for rec in db_files}
-            # Tambahkan opsi "Pilih..." hanya jika ada file lain
-            selectbox_options = ["Pilih file dari database..."] + list(file_options_from_db.keys())
-            
-            selected_db_file_key = st.selectbox(
-                "Pilih file dari database:",
-                selectbox_options,
-                key="preprocess_db_select"
-            )
+        selected_option_display_key = st.selectbox(
+            "Pilih sumber data untuk preprocessing:",
+            list(options_for_preprocessing.keys()), # Tampilkan semua kunci display
+            key="unified_preprocessing_source_select"
+        )
 
-            if selected_db_file_key != "Pilih file dari database...":
-                selected_record = file_options_from_db[selected_db_file_key]
-                db_id, filename_db, filepath_db, text_col_db = selected_record
+        # Inisialisasi variabel untuk data yang akan diproses
+        df_to_process_candidate = None
+        text_col_suggestion_for_input = ""
+        original_filename_for_processing = ""
+        selected_source_internal_key = None # Kunci internal seperti "newly_uploaded" atau "db_ID"
+
+        if selected_option_display_key != "Pilih data untuk diproses...":
+            selected_source_internal_key = options_for_preprocessing[selected_option_display_key]
+            details = source_details_map.get(selected_source_internal_key)
+
+            if details:
+                original_filename_for_processing = details['original_filename']
+                text_col_suggestion_for_input = details['text_col_suggestion']
+
+                if details['source_type'] == 'newly_uploaded':
+                    df_to_process_candidate = details['df']
+                elif details['source_type'] == 'database_file':
+                    with st.spinner(f"Memuat data '{details['original_filename']}' dari database..."):
+                        df_to_process_candidate = load_df_from_path(details['filepath'], details['filename_hint_for_loader'])
                 
-                # Tawarkan tombol proses jika file dari DB dipilih, hanya jika data_to_load_for_preprocessing belum diset dari unggahan baru
-                if data_to_load_for_preprocessing is None: # Hanya tampilkan tombol ini jika belum ada data dari upload terakhir yg dipilih
-                    if st.button(f"Gunakan File dari DB: '{filename_db}' untuk Preprocessing", key=f"process_db_{db_id}"):
-                        df_from_db = load_df_from_path(filepath_db, filename_db)
-                        if df_from_db is not None and not df_from_db.empty:
-                            data_to_load_for_preprocessing = df_from_db
-                            current_text_col_for_pp = text_col_db if text_col_db else (df_from_db.columns[0] if len(df_from_db.columns) > 0 else None) # Fallback
-                            source_name = filename_db
-                            # Simpan nama kolom teks yang akan diproses dari sumber ini
-                            st.session_state.selected_text_col_preprocessing = current_text_col_for_pp
+                if df_to_process_candidate is not None and not df_to_process_candidate.empty:
+                    st.info(f"Data yang dipilih: '{original_filename_for_processing}' (Sumber: {details['source_type'].replace('_', ' ').capitalize()})")
+                    st.dataframe(df_to_process_candidate.head(3))
+
+                    # Meminta konfirmasi/input untuk kolom teks yang akan diproses
+                    # Jika text_col_suggestion_for_input tidak ada di kolom df, set ke string kosong agar user mengisi
+                    if text_col_suggestion_for_input not in df_to_process_candidate.columns:
+                        st.warning(f"Kolom teks yang disarankan ('{text_col_suggestion_for_input}') tidak ditemukan di file. Harap pilih secara manual.")
+                        text_col_suggestion_for_input = df_to_process_candidate.columns[0] if len(df_to_process_candidate.columns) > 0 else ""
+
+
+                    # Izinkan pengguna memilih kolom teks jika autodetect salah atau tidak ada
+                    available_cols = df_to_process_candidate.columns.tolist()
+                    current_text_col_index = 0
+                    if text_col_suggestion_for_input and text_col_suggestion_for_input in available_cols:
+                        current_text_col_index = available_cols.index(text_col_suggestion_for_input)
+                    
+                    final_text_column_to_process = st.selectbox(
+                        "Konfirmasi atau pilih kolom teks yang akan diproses:",
+                        options=available_cols,
+                        index=current_text_col_index,
+                        key="final_text_col_for_pp_select"
+                    )
+                    
+                    if st.button("✨ Mulai Proses Cleaning & Preprocessing Teks ✨", key="start_final_preprocessing_btn"):
+                        if not final_text_column_to_process:
+                            st.error("Kolom teks belum dipilih atau kosong. Harap pilih kolom teks yang valid.")
                         else:
-                            st.error(f"Gagal memuat file '{filename_db}' dari database atau file kosong.")
-        elif data_to_load_for_preprocessing is None: # Jika db_files kosong dan tidak ada data dari upload
-            st.warning("Tidak ada file di database untuk dipilih.")
+                            st.session_state.selected_text_col_preprocessing = final_text_column_to_process # Simpan nama kolom aktual yang diproses
+                            
+                            with st.spinner(f"Melakukan preprocessing pada {len(df_to_process_candidate)} baris. Mohon tunggu..."):
+                                df_processed_output = df_to_process_candidate.copy()
+                                df_processed_output[final_text_column_to_process] = df_processed_output[final_text_column_to_process].astype(str).fillna('') # Pastikan string dan handle NaN
+                                df_processed_output['processed_text'] = preprocess_text_series_st(df_processed_output[final_text_column_to_process], stemmer)
 
-
-    # Bagian inti preprocessing jika data sudah siap
-    if data_to_load_for_preprocessing is not None and current_text_col_for_pp:
-        df_original = data_to_load_for_preprocessing
-        text_column_to_process = current_text_col_for_pp # Ini adalah nama kolom teks asli
-
-        if text_column_to_process not in df_original.columns:
-            st.error(f"Kolom teks asli '{text_column_to_process}' tidak ditemukan dalam data sumber '{source_name}'. Kolom tersedia: {', '.join(df_original.columns.tolist())}")
-        else:
-            st.markdown(f"Akan memproses kolom **'{text_column_to_process}'** dari file **'{source_name}'**.")
-            st.write("Contoh data sebelum preprocessing (5 baris pertama):")
-            st.dataframe(df_original[[text_column_to_process]].head())
-
-            # Simpan nama kolom teks asli yang benar-benar akan diproses ke session_state
-            # Ini penting untuk referensi di menu selanjutnya
-            st.session_state.selected_text_col_preprocessing = text_column_to_process
-
-            if st.button("Mulai Proses Cleaning & Preprocessing Teks", key="start_text_preprocessing_btn"):
-                with st.spinner(f"Melakukan preprocessing pada {len(df_original)} baris. Mohon tunggu..."):
-                    df_processed_output = df_original.copy()
-                    # Pastikan kolom yang diproses ada dan adalah string
-                    df_processed_output[text_column_to_process] = df_processed_output[text_column_to_process].astype(str)
-                    df_processed_output['processed_text'] = preprocess_text_series_st(df_processed_output[text_column_to_process], stemmer)
-
-                # Simpan hasil ke session state
-                st.session_state.processed_df_info = {
-                    'original_filename': source_name,
-                    'df': df_processed_output,
-                    'original_text_column_name': text_column_to_process # Simpan nama kolom teks asli
-                }
-                st.success("Preprocessing teks selesai!")
-                st.subheader("Data Setelah Preprocessing (5 baris pertama):")
-                st.dataframe(df_processed_output[[text_column_to_process, 'processed_text']].head())
-                st.info(f"Jumlah baris data yang diproses: {len(df_processed_output)}. Silakan lanjutkan ke 'Pelatihan Model SVM'.")
-                
-                # Membersihkan state upload_file_info agar tidak otomatis terpilih lagi jika pengguna kembali ke menu ini
-                # kecuali jika mereka memulai dari Upload Data lagi.
-                st.session_state.uploaded_file_info = None 
-    
-    elif (st.session_state.get('uploaded_file_info') or db_files):
-         st.info("Pilih data yang akan diproses dengan menekan tombol 'Gunakan Data Ini...' atau 'Gunakan File dari DB...'.")
+                            st.session_state.processed_df_info = {
+                                'original_filename': original_filename_for_processing,
+                                'df': df_processed_output,
+                                'original_text_column_name': final_text_column_to_process # Simpan nama kolom teks asli yang DIPROSES
+                            }
+                            st.success("Preprocessing teks selesai!")
+                            st.subheader("Data Setelah Preprocessing (5 baris pertama):")
+                            st.dataframe(df_processed_output[[final_text_column_to_process, 'processed_text']].head())
+                            st.info(f"Jumlah baris data yang diproses: {len(df_processed_output)}. Silakan lanjutkan ke 'Pelatihan Model SVM'.")
+                            
+                            # Setelah diproses, data "baru diunggah" dianggap sudah "digunakan"
+                            if selected_source_internal_key == "newly_uploaded":
+                                st.session_state.uploaded_file_info = None 
+                                st.info("Data baru yang diunggah telah diproses. Untuk memprosesnya lagi, pilih dari daftar database (jika disimpan) atau unggah ulang.")
+                elif df_to_process_candidate is None and details: # Jika gagal load_df_from_path
+                     st.error(f"Gagal memuat data untuk '{original_filename_for_processing}'. Periksa pesan error di atas.")
 
 
 elif choice == "3. Pelatihan Model SVM (Pseudo-Labeling)":
@@ -374,27 +402,32 @@ elif choice == "3. Pelatihan Model SVM (Pseudo-Labeling)":
     if st.session_state.processed_df_info is None:
         st.warning("Data belum diproses. Silakan lakukan preprocessing di menu '2. Preprocessing Data'.")
         st.stop()
-    if sentiment_analyzer_pipeline is None: # Menggunakan variabel global yang sudah dicek di sidebar
+    if sentiment_analyzer_pipeline is None: 
         st.error("Pipeline model pre-trained sentiment tidak tersedia (gagal dimuat saat awal). Pelatihan tidak dapat dilanjutkan.")
         st.stop()
 
     processed_info_train = st.session_state.processed_df_info
     df_processed_full = processed_info_train['df']
     original_filename_train = processed_info_train['original_filename']
-    # Mengambil nama kolom teks asli yang digunakan saat preprocessing
-    original_text_col_name_for_display = processed_info_train.get('original_text_column_name', 'Teks Asli')
+    # Nama kolom teks asli yang benar-benar diproses di tahap sebelumnya
+    original_text_col_name_actual = processed_info_train.get('original_text_column_name', 'Teks Asli')
 
 
-    st.info(f"Data yang digunakan untuk pelatihan berasal dari file '{original_filename_train}' yang sudah diproses (kolom 'processed_text').")
+    st.info(f"Data yang digunakan untuk pelatihan berasal dari file '{original_filename_train}' (kolom 'processed_text').")
     st.write("Contoh data 'processed_text' yang akan digunakan (5 baris pertama):")
     st.dataframe(df_processed_full[['processed_text']].head())
 
     # Parameter Pelatihan
     st.subheader("Parameter Pelatihan SVM")
-    train_subset_ratio = st.slider("Persentase data untuk di-pseudo-label dan training SVM:", 0.05, 1.0, 0.20, 0.05, key="train_subset_ratio_slider", help="Rasio dari data yang sudah diproses untuk dijadikan data latih setelah pseudo-labeling.")
-    max_features_tfidf = st.number_input("Jumlah Fitur Maksimum (TF-IDF):", min_value=100, max_value=10000, value=3000, step=100, key="max_feat_tfidf")
-    svm_kernel_train = st.selectbox("Kernel SVM:", options=['linear', 'rbf', 'poly'], index=0, key="svm_kernel_train_select")
-    svm_c_train = st.number_input("Parameter C (Regularization) SVM:", min_value=0.01, value=1.0, step=0.1, format="%.2f", key="svm_c_train_input")
+    col1_train, col2_train, col3_train = st.columns(3)
+    with col1_train:
+        train_subset_ratio = st.slider("Rasio Data Latih (dari data diproses):", 0.05, 1.0, 0.20, 0.05, key="train_subset_ratio_slider", help="Persentase data yang sudah diproses untuk dijadikan data latih setelah pseudo-labeling.")
+    with col2_train:
+        max_features_tfidf = st.number_input("Fitur Maksimum (TF-IDF):", min_value=100, max_value=10000, value=3000, step=100, key="max_feat_tfidf")
+    with col3_train:
+        svm_kernel_train = st.selectbox("Kernel SVM:", options=['linear', 'rbf', 'poly'], index=0, key="svm_kernel_train_select")
+    
+    svm_c_train = st.number_input("Parameter C (Regularization) SVM:", min_value=0.01, value=1.0, step=0.1, format="%.2f", key="svm_c_train_input", help="Nilai C yang lebih kecil menghasilkan margin yang lebih lebar (lebih banyak misklasifikasi pada data latih).")
 
 
     if st.button("🚀 Mulai Pelatihan SVM dengan Pseudo-Labels", key="start_svm_pseudo_train_btn"):
@@ -402,103 +435,93 @@ elif choice == "3. Pelatihan Model SVM (Pseudo-Labeling)":
             st.error("Kolom 'processed_text' tidak ada atau kosong. Pastikan preprocessing berhasil.")
             st.stop()
         
-        min_data_for_training = 10 # Minimal data untuk dibagi dan dilatih
-        if len(df_processed_full) < min_data_for_training:
-             st.error(f"Data yang diproses terlalu sedikit (kurang dari {min_data_for_training} baris). Tidak cukup untuk pelatihan.")
+        min_data_for_training_svm = 10 
+        if len(df_processed_full) < min_data_for_training_svm:
+             st.error(f"Data yang diproses terlalu sedikit (kurang dari {min_data_for_training_svm} baris). Tidak cukup untuk pelatihan.")
              st.stop()
 
         with st.spinner(f"Memilih {train_subset_ratio*100:.0f}% data, melakukan pseudo-labeling, dan melatih SVM... Ini mungkin memakan waktu."):
             
-            n_total_samples = len(df_processed_full)
-            n_train_samples = max(5, int(n_total_samples * train_subset_ratio)) # Minimal 5 sampel untuk latih
-            if n_train_samples >= n_total_samples and n_total_samples > 0: # Jika rasio 100% atau lebih
-                n_train_samples = n_total_samples # Gunakan semua data
-            
-            # Ambil subset untuk training
-            df_train_subset = df_processed_full.sample(n=n_train_samples, random_state=42)
-            st.write(f"Jumlah data untuk pseudo-labeling & training SVM: {len(df_train_subset)} dari {n_total_samples} total data yang diproses.")
+            n_total_samples_train = len(df_processed_full)
+            # Pastikan minimal 5 sampel, atau semua data jika n_total_samples_train < 5
+            n_train_samples_actual = max(min(5, n_total_samples_train), int(n_total_samples_train * train_subset_ratio))
+            if n_train_samples_actual == 0 and n_total_samples_train > 0 : n_train_samples_actual = 1 # Safety for very small df
 
-            # 2. Pseudo-labeling
-            texts_for_pseudo_labeling = df_train_subset['processed_text'].tolist()
-            pseudo_labels_list = []
-            labeling_errors_count = 0
+            df_train_subset_svm = df_processed_full.sample(n=n_train_samples_actual, random_state=42)
+            st.write(f"Jumlah data untuk pseudo-labeling & training SVM: {len(df_train_subset_svm)} dari {n_total_samples_train} total data yang diproses.")
 
-            progress_bar_pseudo = st.progress(0, text="Pseudo-labeling teks...")
-            for i, text_to_label in enumerate(texts_for_pseudo_labeling):
-                if pd.isna(text_to_label) or not str(text_to_label).strip():
-                    pseudo_labels_list.append("neutral") # Default untuk teks kosong/NaN
+            texts_for_pseudo_labeling_svm = df_train_subset_svm['processed_text'].tolist()
+            pseudo_labels_list_svm = []
+            labeling_errors_count_svm = 0
+
+            progress_bar_pseudo_svm = st.progress(0, text="Pseudo-labeling teks...")
+            for i, text_to_label_svm in enumerate(texts_for_pseudo_labeling_svm):
+                current_progress_val = (i + 1) / len(texts_for_pseudo_labeling_svm)
+                progress_bar_pseudo_svm.progress(current_progress_val, text=f"Pseudo-labeling teks... {i+1}/{len(texts_for_pseudo_labeling_svm)} ({current_progress_val:.0%})")
+                if pd.isna(text_to_label_svm) or not str(text_to_label_svm).strip():
+                    pseudo_labels_list_svm.append("neutral")
                 else:
                     try:
-                        # Pastikan teks adalah string tunggal, bukan list atau lainnya
-                        result = sentiment_analyzer_pipeline(str(text_to_label))
-                        pseudo_labels_list.append(result[0]['label'].lower()) # e.g. POSITIVE -> positive
-                    except Exception as e_label:
-                        # st.warning(f"Error pseudo-labeling teks pendek: '{str(text_to_label)[:30]}...' -> {e_label}. Diberi label 'neutral'.")
-                        labeling_errors_count += 1
-                        pseudo_labels_list.append("neutral") # Default jika ada error
-                progress_bar_pseudo.progress((i + 1) / len(texts_for_pseudo_labeling), text=f"Pseudo-labeling teks... {i+1}/{len(texts_for_pseudo_labeling)}")
-            progress_bar_pseudo.empty()
+                        result_svm = sentiment_analyzer_pipeline(str(text_to_label_svm))
+                        pseudo_labels_list_svm.append(result_svm[0]['label'].lower())
+                    except Exception:
+                        labeling_errors_count_svm += 1
+                        pseudo_labels_list_svm.append("neutral")
+            progress_bar_pseudo_svm.empty()
 
-            if labeling_errors_count > 0:
-                st.warning(f"{labeling_errors_count} dari {len(texts_for_pseudo_labeling)} teks gagal di-pseudo-label dengan benar dan diberi label 'neutral'.")
+            if labeling_errors_count_svm > 0:
+                st.warning(f"{labeling_errors_count_svm} dari {len(texts_for_pseudo_labeling_svm)} teks gagal di-pseudo-label dan diberi label 'neutral'.")
 
-            # Assign pseudo-labels ke DataFrame subset pelatihan
-            # Penting: pastikan index df_train_subset masih sesuai jika ada modifikasi sebelumnya
-            df_train_subset = df_train_subset.copy() # Hindari SettingWithCopyWarning
-            df_train_subset.loc[:, 'pseudo_sentiment'] = pseudo_labels_list
+            df_train_subset_svm = df_train_subset_svm.copy()
+            df_train_subset_svm.loc[:, 'pseudo_sentiment'] = pseudo_labels_list_svm
             
             st.write("Contoh data setelah pseudo-labeling (5 baris pertama):")
-            st.dataframe(df_train_subset[['processed_text', 'pseudo_sentiment']].head())
+            st.dataframe(df_train_subset_svm[[original_text_col_name_actual, 'processed_text', 'pseudo_sentiment']].head())
 
-            # 3. Encode Pseudo-Labels
-            current_pseudo_label_encoder = LabelEncoder()
-            df_train_subset.loc[:, 'pseudo_sentiment_encoded'] = current_pseudo_label_encoder.fit_transform(df_train_subset['pseudo_sentiment'])
-            st.session_state.pseudo_label_encoder = current_pseudo_label_encoder # Simpan encoder
+            current_pseudo_label_encoder_svm = LabelEncoder()
+            df_train_subset_svm.loc[:, 'pseudo_sentiment_encoded'] = current_pseudo_label_encoder_svm.fit_transform(df_train_subset_svm['pseudo_sentiment'])
+            st.session_state.pseudo_label_encoder = current_pseudo_label_encoder_svm
             
             st.write("Mapping Label (dari Pseudo-Labeling) ke Angka:")
-            label_mapping = dict(zip(st.session_state.pseudo_label_encoder.classes_, st.session_state.pseudo_label_encoder.transform(st.session_state.pseudo_label_encoder.classes_)))
-            st.json(label_mapping)
+            label_mapping_svm = dict(zip(st.session_state.pseudo_label_encoder.classes_, st.session_state.pseudo_label_encoder.transform(st.session_state.pseudo_label_encoder.classes_)))
+            st.json(label_mapping_svm)
 
-            # 4. TF-IDF Feature Extraction (FIT HANYA pada subset pelatihan ini)
-            current_tfidf_vectorizer = TfidfVectorizer(max_features=max_features_tfidf, ngram_range=(1, 2), min_df=2, sublinear_tf=True)
-            X_train_for_svm = current_tfidf_vectorizer.fit_transform(df_train_subset['processed_text'].fillna('')) # fillna untuk safety
-            y_train_for_svm = df_train_subset['pseudo_sentiment_encoded']
-            st.session_state.tfidf_vectorizer = current_tfidf_vectorizer # Simpan vectorizer yang sudah di-fit
+            current_tfidf_vectorizer_svm = TfidfVectorizer(max_features=max_features_tfidf, ngram_range=(1, 2), min_df=3, sublinear_tf=True) # Naikkan min_df
+            X_train_for_svm_model = current_tfidf_vectorizer_svm.fit_transform(df_train_subset_svm['processed_text'].fillna(''))
+            y_train_for_svm_model = df_train_subset_svm['pseudo_sentiment_encoded']
+            st.session_state.tfidf_vectorizer = current_tfidf_vectorizer_svm
 
-            # 5. Train SVM Model
-            current_svm_model = SVC(kernel=svm_kernel_train, C=svm_c_train, probability=True, random_state=42, class_weight='balanced')
-            current_svm_model.fit(X_train_for_svm, y_train_for_svm)
-            st.session_state.svm_model = current_svm_model # Simpan model yang sudah dilatih
+            current_svm_model_trained = SVC(kernel=svm_kernel_train, C=svm_c_train, probability=True, random_state=42, class_weight='balanced')
+            current_svm_model_trained.fit(X_train_for_svm_model, y_train_for_svm_model)
+            st.session_state.svm_model = current_svm_model_trained
 
             st.success("Model SVM berhasil dilatih dengan pseudo-label!")
 
-            # Evaluasi model SVM pada data training itu sendiri (terhadap pseudo-label)
-            y_pred_on_pseudo_train = st.session_state.svm_model.predict(X_train_for_svm)
-            accuracy_on_pseudo_train = accuracy_score(y_train_for_svm, y_pred_on_pseudo_train)
+            y_pred_on_pseudo_train_svm = st.session_state.svm_model.predict(X_train_for_svm_model)
+            accuracy_on_pseudo_train_svm = accuracy_score(y_train_for_svm_model, y_pred_on_pseudo_train_svm)
             
-            # Pastikan labels dan target_names konsisten untuk classification_report
-            unique_labels_encoded = sorted(y_train_for_svm.unique())
-            unique_target_names = st.session_state.pseudo_label_encoder.inverse_transform(unique_labels_encoded)
+            unique_labels_encoded_svm = sorted(y_train_for_svm_model.unique())
+            unique_target_names_svm = st.session_state.pseudo_label_encoder.inverse_transform(unique_labels_encoded_svm)
 
-            report_on_pseudo_train_dict = classification_report(
-                y_train_for_svm, 
-                y_pred_on_pseudo_train,
-                labels=unique_labels_encoded,
-                target_names=unique_target_names,
+            report_on_pseudo_train_dict_svm = classification_report(
+                y_train_for_svm_model, 
+                y_pred_on_pseudo_train_svm,
+                labels=unique_labels_encoded_svm,
+                target_names=unique_target_names_svm,
                 output_dict=True, 
                 zero_division=0
             )
             
             st.session_state.svm_training_data = {
-                'df_train_pseudo_labeled': df_train_subset.copy(), # Simpan df yang digunakan untuk training
-                'original_text_column_used': original_text_col_name_for_display, # Nama kolom teks asli
-                'accuracy_on_pseudo_train_set': accuracy_on_pseudo_train,
-                'report_on_pseudo_train_set': report_on_pseudo_train_dict
+                'df_train_pseudo_labeled': df_train_subset_svm.copy(),
+                'original_text_column_used': original_text_col_name_actual,
+                'accuracy_on_pseudo_train_set': accuracy_on_pseudo_train_svm,
+                'report_on_pseudo_train_set': report_on_pseudo_train_dict_svm
             }
             st.subheader("Evaluasi Kinerja Model SVM (pada Data Training yang di-Pseudo-Label):")
-            st.metric("Akurasi pada Data Training (vs Pseudo-Labels)", f"{accuracy_on_pseudo_train:.4f}")
+            st.metric("Akurasi pada Data Training (vs Pseudo-Labels)", f"{accuracy_on_pseudo_train_svm:.4f}")
             st.text("Laporan Klasifikasi Detail pada Data Training (vs Pseudo-Labels):")
-            st.dataframe(pd.DataFrame(report_on_pseudo_train_dict).transpose().style.format("{:.2f}"))
+            st.dataframe(pd.DataFrame(report_on_pseudo_train_dict_svm).transpose().style.format("{:.2f}"))
             st.info("Model SVM, Vectorizer TF-IDF, dan Label Encoder telah berhasil disimpan. Anda dapat melanjutkan ke menu 'Klasifikasi Sentimen'.")
 
 
@@ -515,53 +538,45 @@ elif choice == "4. Klasifikasi Sentimen dengan SVM":
         st.warning("Data belum diproses. Silakan unggah dan proses data terlebih dahulu melalui menu '1. Upload Data' dan '2. Preprocessing Data'.")
         st.stop()
 
-    # Data yang akan diklasifikasi adalah seluruh data yang sudah diproses
-    data_to_classify_info = st.session_state.processed_df_info
-    df_processed_for_classification = data_to_classify_info['df']
-    original_filename_for_classification = data_to_classify_info['original_filename']
-    # Mengambil nama kolom teks asli yang digunakan saat preprocessing
-    original_text_col_name_for_display_classify = data_to_classify_info.get('original_text_column_name', 'Teks Asli')
+    data_to_classify_info_svm = st.session_state.processed_df_info
+    df_processed_for_classification_svm = data_to_classify_info_svm['df']
+    original_filename_for_classification_svm = data_to_classify_info_svm['original_filename']
+    original_text_col_name_for_display_classify_svm = data_to_classify_info_svm.get('original_text_column_name', 'Teks Asli Tidak Diketahui')
 
-
-    st.info(f"Akan dilakukan klasifikasi sentimen pada seluruh data dari file '{original_filename_for_classification}' (yang telah melalui preprocessing) menggunakan model SVM yang telah dilatih.")
+    st.info(f"Akan dilakukan klasifikasi sentimen pada seluruh data dari file '{original_filename_for_classification_svm}' (yang telah melalui preprocessing) menggunakan model SVM yang telah dilatih.")
+    st.write(f"Jumlah total data yang akan diklasifikasi: {len(df_processed_for_classification_svm)} baris.")
     st.write("Contoh data 'processed_text' yang akan diklasifikasi (5 baris pertama):")
-    st.dataframe(df_processed_for_classification[['processed_text']].head())
+    st.dataframe(df_processed_for_classification_svm[[original_text_col_name_for_display_classify_svm,'processed_text']].head())
 
-    if st.button("🔎 Mulai Klasifikasi Sentimen dengan SVM", key="start_svm_full_classification_btn"):
-        if 'processed_text' not in df_processed_for_classification.columns or df_processed_for_classification['processed_text'].isnull().all():
+    if st.button("🔎 Mulai Klasifikasi Sentimen dengan SVM pada Seluruh Data", key="start_svm_full_data_classification_btn"):
+        if 'processed_text' not in df_processed_for_classification_svm.columns or df_processed_for_classification_svm['processed_text'].isnull().all():
             st.error("Kolom 'processed_text' tidak ditemukan atau seluruhnya kosong pada data yang akan diklasifikasi. Pastikan preprocessing berhasil.")
             st.stop()
 
-        with st.spinner("Mengaplikasikan TF-IDF dan memprediksi sentimen dengan SVM pada seluruh data..."):
-            df_classified_output = df_processed_for_classification.copy()
+        with st.spinner("Mengaplikasikan TF-IDF dan memprediksi sentimen dengan SVM pada seluruh data... Ini mungkin memakan waktu."):
+            df_classified_output_svm = df_processed_for_classification_svm.copy()
 
-            # 1. TF-IDF Transform (menggunakan vectorizer yang sudah di-FIT dari tahap pelatihan)
-            texts_for_svm_classification = df_classified_output['processed_text'].fillna('') # Handle NaN untuk safety
-            X_features_for_classification = st.session_state.tfidf_vectorizer.transform(texts_for_svm_classification)
+            texts_for_svm_classification_full = df_classified_output_svm['processed_text'].fillna('')
+            X_features_for_classification_full = st.session_state.tfidf_vectorizer.transform(texts_for_svm_classification_full)
 
-            # 2. SVM Predict
-            svm_predictions_encoded_output = st.session_state.svm_model.predict(X_features_for_classification)
+            svm_predictions_encoded_output_full = st.session_state.svm_model.predict(X_features_for_classification_full)
+            svm_predictions_text_output_full = st.session_state.pseudo_label_encoder.inverse_transform(svm_predictions_encoded_output_full)
 
-            # 3. Decode Predictions ke Label Teks
-            svm_predictions_text_output = st.session_state.pseudo_label_encoder.inverse_transform(svm_predictions_encoded_output)
-
-            df_classified_output['sentiment_svm_prediction'] = svm_predictions_text_output
+            df_classified_output_svm['sentiment_svm_prediction'] = svm_predictions_text_output_full
             
-            # Simpan hasil klasifikasi ke session state
             st.session_state.classified_df_info = {
-                'original_filename': original_filename_for_classification,
-                'df': df_classified_output,
-                'original_text_column_name': original_text_col_name_for_display_classify 
+                'original_filename': original_filename_for_classification_svm,
+                'df': df_classified_output_svm,
+                'original_text_column_name': original_text_col_name_for_display_classify_svm 
             }
         
         st.success("Klasifikasi sentimen dengan SVM pada seluruh data telah selesai!")
         st.subheader("Contoh Hasil Klasifikasi SVM (5 baris pertama):")
         
-        display_cols_for_classify_preview = [original_text_col_name_for_display_classify, 'processed_text', 'sentiment_svm_prediction']
-        # Filter kolom yang benar-benar ada
-        display_cols_for_classify_preview = [col for col in display_cols_for_classify_preview if col in df_classified_output.columns]
+        display_cols_for_classify_preview_svm = [original_text_col_name_for_display_classify_svm, 'processed_text', 'sentiment_svm_prediction']
+        display_cols_for_classify_preview_svm = [col for col in display_cols_for_classify_preview_svm if col in df_classified_output_svm.columns]
         
-        st.dataframe(df_classified_output[display_cols_for_classify_preview].head())
+        st.dataframe(df_classified_output_svm[display_cols_for_classify_preview_svm].head())
         st.info("Hasil klasifikasi lengkap dapat dilihat dan diunduh di menu '5. Hasil Analisis Sentimen'.")
 
 
@@ -572,87 +587,79 @@ elif choice == "5. Hasil Analisis Sentimen":
         st.warning("Belum ada data yang diklasifikasi menggunakan SVM. Silakan jalankan proses klasifikasi di menu '4. Klasifikasi Sentimen dengan SVM' terlebih dahulu.")
         st.stop()
 
-    final_results_info = st.session_state.classified_df_info
-    df_final_svm_results = final_results_info['df']
-    original_filename_final_results = final_results_info['original_filename']
-    original_text_col_name_final_display = final_results_info.get('original_text_column_name', 'Teks Asli Tidak Diketahui')
+    final_results_info_display = st.session_state.classified_df_info
+    df_final_svm_results_display = final_results_info_display['df']
+    original_filename_final_results_display = final_results_info_display['original_filename']
+    original_text_col_name_final_display_svm = final_results_info_display.get('original_text_column_name', 'Teks Asli Tidak Diketahui')
 
-    st.subheader(f"Menampilkan Hasil Analisis Sentimen untuk File: '{original_filename_final_results}'")
+    st.subheader(f"Menampilkan Hasil Analisis Sentimen untuk File: '{original_filename_final_results_display}'")
 
-    if 'sentiment_svm_prediction' in df_final_svm_results.columns:
-        # Menyiapkan kolom untuk ditampilkan
-        cols_to_display_in_final_table = []
-        if original_text_col_name_final_display in df_final_svm_results.columns:
-            cols_to_display_in_final_table.append(original_text_col_name_final_display)
-        elif st.session_state.get('selected_text_col_preprocessing') and st.session_state.selected_text_col_preprocessing in df_final_svm_results.columns:
-            # Fallback ke nama kolom dari preprocessing jika ada
-            cols_to_display_in_final_table.append(st.session_state.selected_text_col_preprocessing)
+    if 'sentiment_svm_prediction' in df_final_svm_results_display.columns:
+        cols_to_display_final_table_svm = []
+        # Coba ambil nama kolom asli dari info yang disimpan
+        if original_text_col_name_final_display_svm != 'Teks Asli Tidak Diketahui' and original_text_col_name_final_display_svm in df_final_svm_results_display.columns:
+            cols_to_display_final_table_svm.append(original_text_col_name_final_display_svm)
+        elif st.session_state.get('selected_text_col_preprocessing') and st.session_state.selected_text_col_preprocessing in df_final_svm_results_display.columns:
+            # Fallback ke nama kolom dari info preprocessing jika ada dan valid
+            cols_to_display_final_table_svm.append(st.session_state.selected_text_col_preprocessing)
         
-        if 'processed_text' in df_final_svm_results.columns:
-             cols_to_display_in_final_table.append('processed_text')
-        cols_to_display_in_final_table.append('sentiment_svm_prediction')
+        if 'processed_text' in df_final_svm_results_display.columns:
+             cols_to_display_final_table_svm.append('processed_text')
+        cols_to_display_final_table_svm.append('sentiment_svm_prediction')
         
-        # Filter hanya kolom yang benar-benar ada
-        cols_to_display_in_final_table = [col for col in cols_to_display_in_final_table if col in df_final_svm_results.columns]
+        cols_to_display_final_table_svm = list(dict.fromkeys(cols_to_display_final_table_svm)) # Hapus duplikat jika ada
+        cols_to_display_final_table_svm = [col for col in cols_to_display_final_table_svm if col in df_final_svm_results_display.columns] # Filter final
 
         st.subheader("Tabel Lengkap Hasil Klasifikasi Sentimen SVM:")
-        if cols_to_display_in_final_table:
-            st.dataframe(df_final_svm_results[cols_to_display_in_final_table], height=400) # Tambahkan height agar bisa discroll
+        if cols_to_display_final_table_svm:
+            st.dataframe(df_final_svm_results_display[cols_to_display_final_table_svm], height=400)
         else:
-            st.warning("Tidak ada kolom yang valid untuk ditampilkan. Periksa kembali alur data.")
+            st.warning("Tidak dapat menentukan kolom yang valid untuk ditampilkan. Periksa alur data.")
 
-
-        # Tombol Unduh Hasil
-        @st.cache_data 
-        def convert_df_for_download(df_to_convert, columns_to_include):
-            if columns_to_include:
+        if cols_to_display_final_table_svm: # Tombol unduh hanya jika ada kolom untuk diunduh
+            @st.cache_data 
+            def convert_df_for_download_svm(df_to_convert, columns_to_include):
                 return df_to_convert[columns_to_include].to_csv(index=False).encode('utf-8')
-            return df_to_convert.to_csv(index=False).encode('utf-8') # Fallback jika kolom tidak spesifik
 
-        if cols_to_display_in_final_table:
-            csv_for_download = convert_df_for_download(df_final_svm_results, cols_to_display_in_final_table)
+            csv_for_download_svm = convert_df_for_download_svm(df_final_svm_results_display, cols_to_display_final_table_svm)
             st.download_button(
                 label="📥 Unduh Semua Hasil Klasifikasi (CSV)",
-                data=csv_for_download,
-                file_name=f"hasil_klasifikasi_svm_{original_filename_final_results.split('.')[0]}.csv",
+                data=csv_for_download_svm,
+                file_name=f"hasil_klasifikasi_svm_{original_filename_final_results_display.split('.')[0]}.csv",
                 mime='text/csv',
-                key="download_all_classified_svm_results_csv"
+                key="download_all_classified_svm_results_final_csv"
             )
         st.markdown("---")
         st.subheader("Distribusi Sentimen Hasil Klasifikasi SVM pada Seluruh Data:")
-        sentiment_svm_counts = df_final_svm_results['sentiment_svm_prediction'].value_counts()
+        sentiment_svm_counts_display = df_final_svm_results_display['sentiment_svm_prediction'].value_counts()
 
-        if not sentiment_svm_counts.empty:
-            # Visualisasi dengan st.bar_chart
-            st.bar_chart(sentiment_svm_counts)
-
-            # Visualisasi dengan Matplotlib/Seaborn untuk kustomisasi lebih
+        if not sentiment_svm_counts_display.empty:
+            st.bar_chart(sentiment_svm_counts_display)
             try:
-                fig_dist, ax_dist = plt.subplots(figsize=(8, 5))
-                # Gunakan palette yang konsisten atau menarik
-                palette_colors = sns.color_palette("viridis", len(sentiment_svm_counts))
+                fig_dist_svm, ax_dist_svm = plt.subplots(figsize=(9, 6)) # Ukuran disesuaikan
+                palette_svm = sns.color_palette("pastel", len(sentiment_svm_counts_display))
                 sns.countplot(
                     x='sentiment_svm_prediction', 
-                    data=df_final_svm_results, 
-                    order=sentiment_svm_counts.index, # Urutkan berdasarkan frekuensi
-                    ax=ax_dist, 
-                    palette=palette_colors
+                    data=df_final_svm_results_display, 
+                    order=sentiment_svm_counts_display.index,
+                    ax=ax_dist_svm, 
+                    palette=palette_svm
                 )
-                ax_dist.set_title('Distribusi Sentimen (Prediksi SVM pada Seluruh Data)')
-                ax_dist.set_xlabel('Sentimen')
-                ax_dist.set_ylabel('Jumlah Komentar')
-                # Tambahkan label angka di atas bar
-                for p in ax_dist.patches:
-                    ax_dist.annotate(f'{int(p.get_height())}', 
-                                     (p.get_x() + p.get_width() / 2., p.get_height()),
+                ax_dist_svm.set_title('Distribusi Sentimen (Prediksi SVM pada Seluruh Data)', fontsize=14)
+                ax_dist_svm.set_xlabel('Sentimen', fontsize=12)
+                ax_dist_svm.set_ylabel('Jumlah Komentar', fontsize=12)
+                for p_svm in ax_dist_svm.patches:
+                    ax_dist_svm.annotate(f'{int(p_svm.get_height())}', 
+                                     (p_svm.get_x() + p_svm.get_width() / 2., p_svm.get_height()),
                                      ha='center', va='center', 
                                      xytext=(0, 5), 
-                                     textcoords='offset points', fontsize=9)
-                plt.xticks(rotation=45, ha='right')
-                plt.tight_layout() # Atur layout agar tidak terpotong
-                st.pyplot(fig_dist)
-            except Exception as e_plot:
-                st.error(f"Gagal membuat plot distribusi sentimen detail: {e_plot}")
+                                     textcoords='offset points', fontsize=10, color='black')
+                plt.xticks(rotation=30, ha='right', fontsize=10)
+                plt.yticks(fontsize=10)
+                plt.tight_layout()
+                st.pyplot(fig_dist_svm)
+            except Exception as e_plot_svm:
+                st.error(f"Gagal membuat plot distribusi sentimen detail: {e_plot_svm}")
         else:
             st.info("Tidak ada data sentimen yang valid untuk divisualisasikan dari hasil klasifikasi SVM.")
     else:
@@ -660,11 +667,4 @@ elif choice == "5. Hasil Analisis Sentimen":
 
 # --- Footer ---
 st.sidebar.markdown("---")
-st.sidebar.info("Aplikasi Analisis Sentimen v2.1\n\n(SVM dengan Pseudo-Labeling)")
-
-# Untuk menutup koneksi database saat aplikasi berhenti (opsional, Streamlit biasanya menangani ini)
-# def close_db_connection():
-#     if conn:
-#         conn.close()
-# import atexit
-# atexit.register(close_db_connection)
+st.sidebar.info("Aplikasi Analisis Sentimen v2.2\n\n(SVM dengan Pseudo-Labeling)")
